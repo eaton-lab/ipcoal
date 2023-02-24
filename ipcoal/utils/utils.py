@@ -118,27 +118,32 @@ class Progress:
         self.label.value = self.printstr
 
 
-
 def get_admix_interval_as_gens(
-    tree: 'ToyTree', 
-    idx0:int, 
-    idx1:int, 
-    heights:Optional[Tuple[int, int]]=None,
-    props:Optional[Tuple[float, float]]=None,
-    ) -> Tuple[int, int]:
+    tree: 'ToyTree',
+    idx0: int,
+    idx1: int,
+    heights: Optional[Tuple[int, int]] = None,
+    props: Optional[Tuple[float, float]] = None,
+) -> Tuple[int, int]:
     """
-    Returns the branch interval in units of generations that two 
+    Returns the branch interval in units of generations that two
     edges of a tree are overlapping, with the lower and upper edges
-    optionally trimmed. If user enters admix times as integers then 
+    optionally trimmed. If user enters admix times as integers then
     they are checked only for validation, no trimming.
     """
-    if tree.idx_dict[idx0].is_root() or tree.idx_dict[idx1].is_root():
-        raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
+    try:
+        # ensure nodes are idx labels
+        idx0 = tree.get_nodes(idx0)[0].idx
+        idx1 = tree.get_nodes(idx1)[0].idx
+        if tree[idx0].is_root() or tree[idx1].is_root():
+            raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
+    except KeyError as inst:
+        raise ValueError("Admixture nodes must be in the tree.") from inst
 
     # get full possible intervals for these two nodes from the tree
-    node0 = tree.idx_dict[idx0]
+    node0 = tree[idx0]
     ival0 = (node0.height, node0.up.height)
-    node1 = tree.idx_dict[idx1]
+    node1 = tree[idx1]
     ival1 = (node1.height, node1.up.height)
 
     low_bin = max([ival0[0], ival1[0]])
@@ -201,7 +206,7 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
 
                 # find if nodes have interval where admixture can occur
                 low_bin = np.max([smin, dmin])
-                top_bin = np.min([smax, dmax])              
+                top_bin = np.min([smax, dmax])
                 if top_bin > low_bin:
 
                     # restrict migration within bin to a smaller interval
@@ -210,7 +215,6 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
                     top_limit = low_bin + (length * upper)
                     intervals[(snode.idx, dnode.idx)] = (low_limit, top_limit)
     return intervals
-
 
 
 def get_snps_count_matrix(tree, seqs):
