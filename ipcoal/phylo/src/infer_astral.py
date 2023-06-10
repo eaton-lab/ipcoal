@@ -112,7 +112,7 @@ def infer_astral_tree(
         out, _ = proc.communicate()
         if proc.returncode:
             raise IpcoalError(out.decode())
-    tree = toytree.io.read_newick(tree_file, internal_labels="support")
+    tree = toytree.tree(tree_file, internal_labels="support")
 
     # cleanu tmpfiles
     for tmp in fname.parent.glob(fname.name + "*"):
