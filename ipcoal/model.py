@@ -324,7 +324,7 @@ class Model:
                 "  nsamples=2 \n"
                 "  nsamples={'A': 2, 'B': 2} \n"
                 "  nsamples={0: 2, 1: 2}\n"
-                )
+            )
 
         # samples is now a dict {spnames: int}, e.g., {n0: 2, n1: 2, ...}
         # store sum n samples

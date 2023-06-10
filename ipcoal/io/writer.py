@@ -34,11 +34,10 @@ class Writer:
     to output formats and is not intended to be accessed by users
     directly.
 
-    Parameters
-    ----------
-    model: ipcoal.Model
+    Parameters:
+        model: ipcoal.Model
     """
-    def __init__(self, model: 'ipcoal.Model', alt_seqs: np.ndarray=None):
+    def __init__(self, model: 'ipcoal.Model', alt_seqs: np.ndarray = None):
         # warn if no sequences present. Will cause errors when writing.
         if not model.seqs.size:
             raise IpcoalError(
@@ -81,7 +80,7 @@ class Writer:
         else:
             self.idxs = range(self.seqs.shape[0])
 
-    def _transform_seqs(self, diploid: bool, inplace: bool=True):
+    def _transform_seqs(self, diploid: bool, inplace: bool = True):
         """Transform seqs from int to str and optionally combine into diploids.
 
         Haploid samples are joined into diploids and use IUPAC
@@ -97,10 +96,10 @@ class Writer:
             # only even sampling numbers
             if any(i % 2 for i in self.sampling.values()):
                 raise IpcoalError(
-                "All sampled populations must have an even number of samples "
-                "to use diploid=True IUPAC encoding. Your sampling is:\n"
-                f"{self.sampling}"
-            )
+                    "All sampled populations must have an even number of samples "
+                    "to use diploid=True IUPAC encoding. Your sampling is:\n"
+                    f"{self.sampling}"
+                )
 
         txf = Transformer(
             self.seqs,
@@ -123,7 +122,7 @@ class Writer:
         name_suffix: Optional[str]=None,
         diploid: bool=False,
         quiet: bool=False,
-        ) -> None:
+    ) -> None:
         """Write seq data for each locus to a separate phylip file.
 
         Files are written to a shared directory with each locus named
@@ -251,7 +250,7 @@ class Writer:
         idxs=None,
         diploid=False,
         quiet=False,
-        ):
+    ):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
 
@@ -305,7 +304,7 @@ class Writer:
         outdir: str,
         diploid: bool,
         quiet: bool,
-        ):
+    ):
         """Write data to ipyrad HDF5 database format.
 
         This format is used by ipyrad-analysis toolkit to efficiently
@@ -496,7 +495,7 @@ class Writer:
         bgzip=False,
         fill_missing_alleles=True,
         quiet=False,
-        ):
+    ):
         """Passes data to VCF object for conversion and writes resulting table
         to CSV.
 
@@ -615,12 +614,11 @@ class Writer:
                     "  {}\t{}\n".format(
                         name,
                         "".join([base_.decode() for base_ in seqdat])
-                        )
                     )
+                )
             lines.append("\n")
         lines.append("\t;\nend;")
         return "".join(lines)
-
 
     # def write_seqs_as_fasta(self, loc, path):
     #     fastaseq = deepcopy(self.seqs[loc]).astype(str)
@@ -632,10 +630,6 @@ class Writer:
     #     with open(path, 'w') as file:
     #         for line in fasta:
     #             file.write(line)
-
-
-
-
 
 
 
