@@ -5,6 +5,7 @@
 """
 
 from typing import Union, TypeVar, Optional, Dict, Sequence
+import os
 import sys
 from pathlib import Path
 from subprocess import Popen, PIPE, STDOUT
@@ -82,7 +83,7 @@ def infer_astral_tree(
     assert Path(binary_path).exists(), BINARY_MISSING.format(binary_path)
 
     # write trees input as a newline separated file
-    with tempfile.NamedTemporaryFile(dir=tmpdir) as tmpfile:
+    with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"-{os.getpid()}") as tmpfile:
         fname = Path(tmpfile.name)
 
         # write trees to a file separated by newlines w/o edge lens/labels

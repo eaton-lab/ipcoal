@@ -399,7 +399,7 @@ if __name__ == "__main__":
     TREE = toytree.rtree.unittree(ntips=5, seed=123, treeheight=1e6)
     MODEL = ipcoal.Model(TREE, Ne=5e4, subst_model="jc69")
     MODEL.sim_loci(nloci=10, nsites=200)
-    TREES = infer_raxml_ng_trees(MODEL, nthreads=2, nworkers=2, nboots=10, seed=1)
+    TREES = infer_raxml_ng_trees(MODEL, nthreads=2, nworkers=1, nproc=2, nboots=10, seed=1)
     print(TREES)
 
     # print({i: j.result().write(None) for (i, j) in TREES.items()})

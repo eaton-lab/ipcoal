@@ -54,7 +54,7 @@ class Writer:
         self.outdir: str = None
         self.outfile: str = None
         self.idxs: List[int] = None
-        self.sampling: Dict[str,int] = None
+        self.sampling: Dict[str, int] = None
 
         # fill sampling
         sample_sizes = [i.num_samples for i in model.samples]
@@ -434,6 +434,7 @@ class Writer:
             np.concatenate(self.ancestral_seq),
             varsites,
             txf.dindex_map,
+            fill_missing_alleles=True,
         )
         _, gmat = genos.get_alts_and_genos_matrix()
 
