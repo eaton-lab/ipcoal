@@ -105,6 +105,7 @@ def infer_raxml_ng_tree_from_phylip(
     seed: Optional[int] = None,
     subst_model: str = "GTR+G",
     binary_path: Union[str, Path] = None,
+    do_not_autoscale_threads: bool = False,
 ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng.
 
@@ -121,14 +122,20 @@ def infer_raxml_ng_tree_from_phylip(
     for tmp in fpath.parent.glob(f"{fpath.name}.*"):
         tmp.unlink()
 
+    # '--threads auto{X}' will use more than X if available, but also 
+    # prevents from crashing if X is not available...
+    if do_not_autoscale_threads:
+        threads = str(nthreads)
+    else:
+        threads = f"auto{{nthreads}}"
+
     # run `raxml-ng [search|all] ...`
-    # I believe '--threads auto{X}' is max X threads.
     cmd = [
         str(binary_path),
         "--msa", str(fpath),
         "--model", str(subst_model),
         "--redo",
-        "--threads", f"auto{{nthreads}}",
+        "--threads", threads,
         "--workers", str(nworkers) if nworkers else 'auto',
         "--nofiles", "interim",
         "--log", "ERROR"
@@ -180,6 +187,7 @@ def infer_raxml_ng_tree(
     binary_path: Union[str, Path] = None,
     tmpdir: Optional[Path] = None,
     remove_tmp_files: bool = True,
+    do_not_autoscale_threads: bool = False,
 ) -> toytree.ToyTree:
     """Return a gene tree inferred by raxml-ng for one or more loci.
 
@@ -232,7 +240,9 @@ def infer_raxml_ng_tree(
     kwargs = dict(
         alignment=fpath, nboots=nboots, nthreads=nthreads,
         nworkers=nworkers, seed=seed, subst_model=subst_model,
-        binary_path=binary_path)
+        binary_path=binary_path,
+        do_not_autoscale_threads=do_not_autoscale_threads,
+    )
 
     # get result as ToyTree and remove all tmp files.
     tree = infer_raxml_ng_tree_from_phylip(**kwargs)
