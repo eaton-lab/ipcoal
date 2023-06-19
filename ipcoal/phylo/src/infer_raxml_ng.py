@@ -69,6 +69,7 @@ def infer_raxml_ng_tree_from_alignment(
     binary_path: Union[str, Path] = None,
     tmpdir: Optional[Path] = None,
     cleanup: bool = True,
+    do_not_autoscale_threads: bool = False,
 ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng from a phylip string.
 
@@ -88,6 +89,7 @@ def infer_raxml_ng_tree_from_alignment(
             alignment=fname, nboots=nboots, nthreads=nthreads,
             nworkers=nworkers, seed=seed, subst_model=subst_model,
             binary_path=binary_path,
+            do_not_autoscale_threads=do_not_autoscale_threads,
         )
     if cleanup:
         for tmpf in fname.parent.glob(fname.name + "*"):
@@ -122,7 +124,7 @@ def infer_raxml_ng_tree_from_phylip(
     for tmp in fpath.parent.glob(f"{fpath.name}.*"):
         tmp.unlink()
 
-    # '--threads auto{X}' will use more than X if available, but also 
+    # '--threads auto{X}' will use more than X if available, but also
     # prevents from crashing if X is not available...
     if do_not_autoscale_threads:
         threads = str(nthreads)
@@ -273,6 +275,7 @@ def infer_raxml_ng_trees(
     nthreads: int = 4,
     nworkers: int = 4,
     cleanup: bool = True,
+    do_not_autoscale_threads: bool = False,
 ) -> pd.DataFrame:
     r"""Return a DataFrame w/ inferred gene trees at every locus.
 
@@ -302,8 +305,12 @@ def infer_raxml_ng_trees(
         ...
     binary_path: None, str, or Path
         Path to the raxml binary.
+    nproc: int
+        Number of workers used here to distribute parallel raxml jobs
+    nthreads: int
+        Number of threads per raxml tree inference job.
     nworkers: int
-        ...
+        Number of workers used by raxml to distribute bootstrap jobs.
     tmpdir: Path or None
         Path to store temporary files. Default is tempdir (/tmp).
     cleanup: bool
@@ -323,7 +330,8 @@ def infer_raxml_ng_trees(
     kwargs = dict(
         nboots=nboots, nthreads=nthreads, nworkers=nworkers,
         seed=seed, subst_model=subst_model,
-        binary_path=binary_path, tmpdir=tmpdir, cleanup=cleanup)
+        binary_path=binary_path, tmpdir=tmpdir, cleanup=cleanup,
+        do_not_autoscale_threads=do_not_autoscale_threads)
 
     # distribute jobs in parallel
     rng = np.random.default_rng(seed)
