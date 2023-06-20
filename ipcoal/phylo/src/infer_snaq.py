@@ -29,6 +29,7 @@ REQUIRED_PACKAGES = """
 using Pkg
 Pkg.add("PhyloNetworks")
 Pkg.add("CSV")
+Pkg.add("DataFrames")
 """
 
 GENE_TREE_COUNT_SCRIPT = """
@@ -123,7 +124,7 @@ class Snaq:
         self.path_to_julia = self.path_to_julia if self.path_to_julia else "julia"
 
         self._check_julia_binary()
-        # self.install_phylonetworks()
+        self.install_phylonetworks()
         self._run_quartet_cf_table()
 
     def _check_julia_binary(self) -> None:
@@ -266,10 +267,16 @@ def infer_snaq_network(
     tmpdir: Optional[Path] = None,
     name: str = "test",
     starting_tree: Optional[Union[str, toytree.ToyTree]] = None,
+    nproc: int = 4,
+    nreps: int = 8,
     # imap: Dict[str, Sequence[str]] = None,
     # nboots: int = 1000,
     # annotation: int = 3,
 ) -> Tuple[toytree.ToyTree, Mapping[int, int]]:
+
+    # append proc id to name
+    suffix = f"snaq-p{os.getpid()}"
+    name = f"{name}-{suffix}" if name is not None else suffix
 
     # get tmpdir or use gettempdir
     tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
@@ -294,6 +301,8 @@ def infer_snaq_network(
         workdir=tmpdir / "analysis-snaq",
         path_to_julia=binary_path,
         force=True,
+        nruns=nreps,
+        nproc=nproc,
     )
 
     if starting_tree is None:
