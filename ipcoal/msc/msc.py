@@ -2,18 +2,19 @@
 
 """Calculate likelihood of a gene tree embedded in a species tree.
 
-NOT YET IMPLEMENTED..
+TODO
+----
+make faster version using numpy and jit.
 
 References
 ----------
-- Rannala and Yang (...) "Bayes Estimation of Species Divergence 
-    Times and Ancestral Population Sizes Using DNA Sequences From Multiple Loci
+- Rannala and Yang (...) "Bayes Estimation of Species Divergence
+  Times and Ancestral Population Sizes Using DNA Sequences From Multiple Loci
 - Degnan and Salter (...) "..."
 - ... (...) "STELLS-mod..."
-
 """
 
-from typing import Dict
+from typing import Dict, Sequence
 import itertools
 import numpy as np
 import pandas as pd
@@ -29,7 +30,7 @@ def get_msc_embedded_gene_tree_table(
     species_tree: toytree.ToyTree,
     gene_tree: toytree.ToyTree,
     imap: Dict,
-    ) -> pd.DataFrame:
+) -> pd.DataFrame:
     """Return a DataFrame with intervals of coal and non-coal events.
 
     Each row in the dataframe represents an interval of time along
@@ -59,7 +60,7 @@ def get_msc_embedded_gene_tree_table(
 
     # iterate over species tree nodes from tips to root
     # for nidx in range(species_tree.nnodes - 1)[::-1]: #.treenode.traverse("postorder"):
-    for st_node in species_tree.treenode.traverse("postorder"):        
+    for st_node in species_tree.treenode.traverse("postorder"):
         # st_node = species_tree[nidx]
 
         # get n nedges into the species tree interval, for tips it is
@@ -113,29 +114,13 @@ def get_msc_embedded_gene_tree_table(
     return data
 
 
-def new_gene_tree_log_prob_single_pop(
-    neff: float, coal_times: np.ndarray) -> float:
-    """
-    TODO: this is not yet giving the same answer as below, needs
-    testing...
-    """
-    coal_times = np.array(sorted(coal_times))
-    nlineages = np.arange(coal_times.size, 1, -1)
-    rate = 1 / (2 * neff)
-    coal_ivals = coal_times - np.array([0] + list(coal_times))
-    npairs = nlineages * (nlineages - 1)
-    opportunity = npairs * coal_ivals
-    probs = rate * np.exp(-rate * opportunity)
-    return np.sum(np.log(probs))
-
-
 def get_censored_interval_log_prob(
     neff: float,
     nedges_in: int,
     nedges_out: int,
     interval_dist: float,
     coal_dists: np.ndarray,
-    ):
+) -> float:
     """Return the log probability of a censored species tree interval.
 
     Parameters
@@ -149,22 +134,22 @@ def get_censored_interval_log_prob(
     interval_dist: float
         Length of the species tree interval in units of generations.
     coal_dists: np.ndarray
-        Array of ordered coal *interval lengths* within a censored 
-        population interval, representing the dist from one event to 
-        the next. Events are gene tree coalescent times ordered from 
+        Array of ordered coal *interval lengths* within a censored
+        population interval, representing the dist from one event to
+        the next. Events are gene tree coalescent times ordered from
         when the most edges existed to when the fewest existed.
-    
+
     Notes
     -----
-    Compared to the references below, we convert units to use the 
-    population Ne values and time in units of generations, as opposed 
+    Compared to the references below, we convert units to use the
+    population Ne values and time in units of generations, as opposed
     popuation theta values and time in units of substitutions. This is
-    because when working with genealogies alone we do not need the 
+    because when working with genealogies alone we do not need the
     mutation rate. This conversion represents the coalescent rate as
     (1 / 2Ne) instead (2 / theta), since theta=4Neu, and we will assume
-    that u=1. Similarly, time in units of E(substitutions/site) 
-    represents a measure of rate x time, where time is in generations, 
-    and rate (u) is (mutations / site / generation). To get in 
+    that u=1. Similarly, time in units of E(substitutions/site)
+    represents a measure of rate x time, where time is in generations,
+    and rate (u) is (mutations / site / generation). To get in
     generations, we multiply by 1 / u, which has of effect when u=1.
 
     References
@@ -183,7 +168,7 @@ def get_censored_interval_log_prob(
     remaining_time = interval_dist - np.sum(coal_dists)
 
     # The probability density of observing n-m coalescent events.
-    # The opportunity for coalescence is described by the number of 
+    # The opportunity for coalescence is described by the number of
     # ways that m lineages can be joined, times the length of time
     # over which m lineages existed. This 'opportunity' is treated as
     # an *exponential waiting time* with coalescence rate lambda, so:
@@ -192,31 +177,22 @@ def get_censored_interval_log_prob(
     prob_coal = 1.
     for idx, nedges in enumerate(range(nedges_in, nedges_out, -1)):
         npairs = (nedges * (nedges - 1)) / 2
-        opportunity = npairs * coal_dists[idx]
-        prob_coal *= rate * np.exp(-rate * opportunity)
-        logger.warning(f"npairs={npairs}, coal_t={coal_dists[idx]}")
-
-    p2 = 0
-    for idx, nedges in enumerate(range(nedges_in, nedges_out, -1)):
-        npairs = (nedges * (nedges - 1)) / 2
         time = coal_dists[idx]
-        p2 += np.exp(-npairs * time)
+        prob_coal *= rate * np.exp(-npairs * rate * time)
 
-    # The probability that no coalescent events occur from the last 
+    # The probability that no coalescent events occur from the last
     # event until the end of the species tree interval. The more
-    # edges that remain, and the longer the remaining distance, the 
-    # higher this probability is. It is 1 if nedges_out=1, bc there 
+    # edges that remain, and the longer the remaining distance, the
+    # higher this probability is. It is 1 if nedges_out=1, bc there
     # is no one left to coalesce with in the interval. The species tree
     # root interval is always 1.
     prob_no_coal = 1.
     if nedges_out > 1:
-        npairs_not_coalesced = (nedges_out * (nedges_out - 1)) / 2
-        opportunity = npairs_not_coalesced * remaining_time
-        prob_no_coal = np.exp(-rate * opportunity)
+        npairs_out = (nedges_out * (nedges_out - 1)) / 2
+        prob_no_coal = np.exp(-npairs_out * rate * remaining_time)
 
     # multiply to get joint prob dist of the gt in the pop
     prob = prob_coal * prob_no_coal
-    logger.info(f"pcoal={prob_coal}, pno-coal={prob_no_coal}, prob={prob}")
 
     # return log positive results
     if prob > 0:
@@ -224,14 +200,14 @@ def get_censored_interval_log_prob(
     return np.inf
 
 
-def get_gene_tree_log_prob_msc(table: pd.DataFrame):
+def get_loglik_gene_tree_msc_from_table(table: pd.DataFrame):
     """Return the log probability of a gene tree given a species tree.
 
     Example
     -------
-    >>> 
-    >>> 
-    >>> 
+    >>>
+    >>>
+    >>>
     """
     # iterate over the species tree intervals to sum of logliks
     loglik = 0
@@ -239,9 +215,9 @@ def get_gene_tree_log_prob_msc(table: pd.DataFrame):
         dat = table.loc[interval]
 
         # get log prob of censored coalescent
-        prob = get_censored_interval_log_prob(
-            dat.neff, dat.nedges_in, dat.nedges_out, dat.dist, dat.coals)
-        loglik += prob     
+        args = (dat.neff, dat.nedges_in, dat.nedges_out, dat.dist, dat.coals)
+        prob = get_censored_interval_log_prob(*args)
+        loglik += prob
 
     # species tree prob is the product of population probs
     if loglik == np.inf:
@@ -249,52 +225,82 @@ def get_gene_tree_log_prob_msc(table: pd.DataFrame):
     return -loglik
 
 
+def get_loglik_gene_tree_msc(
+    species_tree: toytree.ToyTree,
+    gene_trees: Sequence[toytree.ToyTree],
+    imap: Dict,
+) -> float:
+    """Return -log-likelihood of observing gene tree in a species tree.
+
+    Parameters
+    ----------
+    species_tree: ToyTree
+        Species tree with a "Ne" feature assigned to every Node, and
+        edge lengths in units of generations. The tree can be non-
+        ultrametric, representing differences in generation times.
+    gene_trees: ToyTree, MultiTree, or Sequence[ToyTree]
+        One or more gene trees that can be embedded in the species
+        tree. Edge lengths are in units of generations.
+    imap: Dict
+        A dict mapping species tree tip Node names to lists of gene
+        tree tip Node names.
+    """
+    if isinstance(gene_trees, toytree.ToyTree):
+        gene_trees = [gene_trees]
+
+    loglik = 0.
+    for gtree in gene_trees:
+        table = get_msc_embedded_gene_tree_table(species_tree, gtree, imap)
+        loglik += get_loglik_gene_tree_msc_from_table(table)
+    return loglik
+
 
 if __name__ == "__main__":
-    
 
     ipcoal.set_log_level("INFO")
-
-    # setup species tree model
-    SPTREE = toytree.rtree.unittree(ntips=3, treeheight=1e6, seed=123)
-    SPTREE = SPTREE.set_node_data(
-        "Ne", default=1e5, #mapping={i: 5e5 for i in (0, 1, 8, 9)}
-    )
 
     # simulate genealogies
     RECOMB = 1e-9
     MUT = 1e-9
     NEFF = 5e5
     THETA = 4 * NEFF * MUT
-    MODEL = ipcoal.Model(
-        SPTREE,
-        Ne=NEFF,
-        seed_trees=123,
-        nsamples=4,
-        recomb=RECOMB,
-        mut=MUT,
-    )
-    MODEL.sim_trees(100, 1)
+
+    # setup species tree model
+    SPTREE = toytree.rtree.unittree(ntips=3, treeheight=1e6, seed=123)
+    SPTREE = SPTREE.set_node_data("Ne", default=NEFF, data={0: 1e5})
+
+    # setup simulation
+    MODEL = ipcoal.Model(SPTREE, seed_trees=123, nsamples=5)
+    MODEL.sim_trees(10)
     IMAP = MODEL.get_imap_dict()
-    GTREES = toytree.mtree(MODEL.df.genealogy.tolist())
+    GTREES = toytree.mtree(MODEL.df.genealogy)
+    # GTREE.draw(ts='c', height=400)
 
-    # get embedding table
-    DATA = get_msc_embedded_gene_tree_table(SPTREE, GTREES.treelist[0], IMAP)
-    print(DATA)
+    table = get_msc_embedded_gene_tree_table(SPTREE, GTREES[0], IMAP)
+    print(table)
+    print(get_loglik_gene_tree_msc_from_table(table))
+    print(get_loglik_gene_tree_msc(SPTREE, GTREES, IMAP))
 
+    # TEST_VALUES = np.logspace(np.log10(NEFF) - 1, np.log10(NEFF) + 1, 19)
+    # test_logliks = []
+    # for idx in MODEL.df.index:
+    #     gtree = toytree.tree(MODEL.df.genealogy[idx])
+    #     table = get_msc_embedded_gene_tree_table(SPTREE, gtree, IMAP)
 
-    # # hello
-    LOGLIK = get_gene_tree_log_prob_msc(DATA)
-    # print(LOGLIK)
+    #     logliks = []
+    #     for ne in TEST_VALUES:
+    #         table.neff = ne
+    #         loglik = get_gene_tree_log_prob_msc(table)
+    #         logliks.append(loglik)
+    #     test_logliks.append(logliks)
 
+    # logliks = np.array(test_logliks).sum(axis=0)
 
-    # # single
-    # DATA = DATA.iloc[2]
-    # LOGLIK = get_censored_interval_log_prob(
-    #     DATA.neff, 
-    #     DATA.nedges_in, 
-    #     DATA.nedges_out, 
-    #     DATA.dist, 
-    #     DATA.coals,
+    # import toyplot
+    # canvas, axes, mark = toyplot.plot(
+    #     TEST_VALUES, logliks,
+    #     xscale="log",
+    #     height=300, width=400,
     # )
-    # print(LOGLIK)
+    # axes.vlines([NEFF])
+    # toytree.utils.show(canvas)
