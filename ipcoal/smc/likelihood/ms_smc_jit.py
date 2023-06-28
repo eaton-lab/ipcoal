@@ -549,14 +549,15 @@ if __name__ == "__main__":
 
     g = tdata._get_genealogies()
 
-    print([ipcoal.smc.get_probability_of_topology_change(model.tree, g[i], imap) for i in range(10)])
+    # NOTE SLIGHT FLOATING POINT VARIATION AT >16th decimal
+    print([ipcoal.smc.get_probability_topology_change(model.tree, g[i], imap) for i in range(10)])
     print(
-    [ipcoal.smc.likelihood.ms_smc_jit._get_fast_probability_of_topology_change(
-        tdata.earr[tdata.earr[:, 6] == i],
-        tdata.barr[i],
-        tdata.sarr[i],
-        tdata.rarr[i],
-    ) for i in range(10)]
+        [ipcoal.smc.likelihood.ms_smc_jit._get_fast_probability_of_topology_change(
+            tdata.earr[tdata.earr[:, 6] == i],
+            tdata.barr[i],
+            tdata.sarr[i],
+            tdata.rarr[i],
+        ) for i in range(10)]
     )
 
     # # Setup a species tree with edge lengths in generations
