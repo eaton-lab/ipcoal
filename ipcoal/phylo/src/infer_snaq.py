@@ -306,8 +306,8 @@ def infer_snaq_network(
     )
 
     if starting_tree is None:
-        pass
-        # net0, ... = tool.run(nedges=0, net_in=net0, seed=123)
+        tool.run(nedges=0, net_in=None, seed=123)
+        net_in = None
     else:
         net_in = starting_tree
     for i in range(1, nedges + 1):
