@@ -18,6 +18,7 @@ from ipcoal.smc.likelihood.utils import iter_unique_topologies_from_genealogies
 
 logger = logger.bind(name="ipcoal")
 
+
 ################################################################
 ################################################################
 # GET EMBEDDING DATA
@@ -28,8 +29,8 @@ class Embedding(ABC):
     """Container class for storing genealogy embedding data as arrays.
 
     The embedding table is accessible from the `.table` attribute
-    of the Embedding class. This object also stores additional data 
-    as numpy arrays to use in fast jit-compiled computations. These 
+    of the Embedding class. This object also stores additional data
+    as numpy arrays to use in fast jit-compiled computations. These
     arrays include the following:
         1. concatenated genealogy embedding table
         2. all edge lengths across all genealogies
@@ -38,22 +39,22 @@ class Embedding(ABC):
 
     The embedding class object is intended to be passed to one of
     the following functions:
-        - `get_waiting_distance_to_tree_change_rates` 
+        - `get_waiting_distance_to_tree_change_rates`
         - `get_waiting_distance_to_topology_change_rates`
         - `get_tree_distance_loglik`
-        - `get_topology_distance_loglik`        
+        - `get_topology_distance_loglik`
 
     Parameters
     ----------
     species_tree: ToyTree
-        A toytree object with diploid Ne values assigned as features 
+        A toytree object with diploid Ne values assigned as features
         to Nodes.
     genealogies: Sequence[ToyTree]
         A collection of ToyTree objects representing genealogies that
         are embedded in the species tree.
-    imap: Dict[str, Sequence[str]] 
+    imap: Dict[str, Sequence[str]]
         A dictionary mapping species tree tips names to genealogy
-        tip names. 
+        tip names.
     nproc: int
         Number of processors to use for parallelization. Default
         is to use all available.
@@ -74,12 +75,12 @@ class Embedding(ABC):
         species_tree: toytree.ToyTree,
         genealogies: Sequence[toytree.ToyTree],
         imap: Mapping[str, Sequence[str]],
-        nproc: Optional[int]=None,
-        ):
+        nproc: Optional[int] = None,
+    ):
         # store inputs
         self.species_tree = species_tree
         self.genealogies = (
-            [genealogies] if isinstance(genealogies, toytree.ToyTree) 
+            [genealogies] if isinstance(genealogies, toytree.ToyTree)
             else genealogies)
         self.imap = imap
         self.nproc = nproc
@@ -92,7 +93,7 @@ class Embedding(ABC):
         self.table: pd.DataFrame = None
         self.earr: np.ndarray = None
         self.barr: np.ndarray = None
-        self.sarr: np.ndarray = None 
+        self.sarr: np.ndarray = None
         self.rarr: np.ndarray = None
         self.run()
 
@@ -129,11 +130,12 @@ class TreeEmbedding(Embedding):
     def _get_genealogies(self):
         return self.genealogies
 
+
 class TopologyEmbedding(Embedding):
     """Container for genealogy topology embedding data."""
     def _get_genealogies(self):
         return list(iter_unique_topologies_from_genealogies(
-            self.genealogies, 
+            self.genealogies,
             # average_branch_lengths=self.average_branch_lengths),
         ))
 
@@ -145,8 +147,8 @@ def _parallel_get_multigenealogy_embedding_table(
     species_tree: toytree.ToyTree,
     genealogies: Sequence[toytree.ToyTree],
     imap: Mapping[str, Sequence[str]],
-    nproc: Optional[int]=None,
-    ) -> pd.DataFrame:
+    nproc: Optional[int] = None,
+) -> pd.DataFrame:
     """Return a concatenated DataFrame of genealogy embedding tables.
 
     Note
@@ -154,20 +156,20 @@ def _parallel_get_multigenealogy_embedding_table(
     This function is provided primarily for didactic reasons to make
     the general code and framework easier to understand. In practice,
     this function is called within the function `get_data()`, which
-    returns a tuple of numpy arrays that are used for likelihood 
-    calculations under the MS-SMC'. 
-    
+    returns a tuple of numpy arrays that are used for likelihood
+    calculations under the MS-SMC'.
+
     Parameters
     ----------
     species_tree: ToyTree
-        A toytree object with diploid Ne values assigned as features 
+        A toytree object with diploid Ne values assigned as features
         to Nodes.
     genealogies: Sequence[ToyTree]
         A collection of ToyTree objects representing genealogies that
         are embedded in the species tree.
-    imap: Dict[str, Sequence[str]] 
+    imap: Dict[str, Sequence[str]]
         A dictionary mapping species tree tips names to genealogy
-        tip names. 
+        tip names.
     nproc: int
         Number of processors to use for parallelization. Default
         is to use all available.
@@ -202,11 +204,11 @@ def _concat_embedding_tables(etables: Sequence[pd.DataFrame]) -> pd.DataFrame:
     for gidx, etable in enumerate(etables):
         # make a column for the genealogy index
         etable["gindex"] = gidx
-        
+
         # make presence/absence column for each branch
         bidxs = np.zeros((etable.shape[0], ninodes), dtype=int)
         for bidx in range(ninodes):
-            btable = etable[etable.edges.apply(lambda x: bidx in x)]  
+            btable = etable[etable.edges.apply(lambda x: bidx in x)]
             # record branches in this interval as 1.
             bidxs[btable.index, bidx] = 1
         bidxs = pd.DataFrame(bidxs, columns=range(ninodes))
@@ -215,14 +217,14 @@ def _concat_embedding_tables(etables: Sequence[pd.DataFrame]) -> pd.DataFrame:
         btable.iloc[-1, [1, 5]] = int(1e12)
         btables.append(btable)
         # if not gidx % 1000:
-            # logger.debug(f'concat genealogy index: {gidx}')
+        #     logger.debug(f'concat genealogy index: {gidx}')
     return pd.concat(btables, ignore_index=True)
 
 
 def _get_relationship_table(genealogies: Sequence[toytree.ToyTree]) -> np.ndarray:
     """Return an array with relationships among nodes in each genealogy.
 
-    The returned table is used in likelihood calculations for the 
+    The returned table is used in likelihood calculations for the
     waiting distance to topology-change events.
     """
     ntrees = len(genealogies)
