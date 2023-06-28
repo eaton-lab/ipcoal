@@ -299,10 +299,15 @@ def _get_sum_pb2(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
 # Get prob. tree- or topo-change given branch and time
 ###################################################################
 
+
 def get_probability_tree_unchanged_given_b_and_tr(
-    species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
-    branch: int, time: float) -> float:
-    """Return probability of tree-unchanged given species tree, genealogy, 
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    branch: int,
+    time: float,
+) -> float:
+    """Return probability of tree-unchanged given species tree, genealogy,
     and the branch and timing on which recombination occurs.
 
     $P(tree-unchanged | S,G,b,tr)$
@@ -310,8 +315,12 @@ def get_probability_tree_unchanged_given_b_and_tr(
     etable = get_genealogy_embedding_table(species_tree, genealogy, imap)
     return get_probability_tree_unchanged_given_b_and_tr_from_table(etable, branch, time)
 
+
 def get_probability_tree_unchanged_given_b_and_tr_from_table(
-    table: pd.DataFrame, branch: int, time: float) -> float:
+    table: pd.DataFrame,
+    branch: int,
+    time: float,
+) -> float:
     """Return prob tree-change does not occur given recomb on branch b at time t.
 
     This is a faster version of `get_probability_tree_unchanged_given_b_and_tr`
@@ -351,27 +360,33 @@ def get_probability_tree_unchanged_given_b_and_tr_from_table(
         term2 += _get_pij(btab, idx, jdx) * inner
     return term1 + term2
 
+
 def get_probability_topology_unchanged_given_b_and_tr(
-    species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
-    branch: int, time: float) -> float:
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    branch: int,
+    time: float,
+) -> float:
     """Return prob topology-change does not occur given recomb on branch b at time t.
 
     """
     etable = get_genealogy_embedding_table(species_tree, genealogy, imap)
     return get_probability_topology_unchanged_given_b_and_tr_from_table(
-        etable, 
-        branch, 
-        genealogy[branch].get_sisters()[0].idx, 
-        genealogy[branch].up.idx, 
+        etable,
+        branch,
+        genealogy[branch].get_sisters()[0].idx,
+        genealogy[branch].up.idx,
         time)
 
-def get_probability_topology_unchanged_given_b_and_tr_from_table(    
+
+def get_probability_topology_unchanged_given_b_and_tr_from_table(
     table: pd.DataFrame,
     branch: int,
     sibling: int,
     parent: int,
     time: float,
-    ) -> float:
+) -> float:
     """Return prob topology-change does not occur given recomb on branch b at time t.
 
     Parameters
@@ -435,13 +450,17 @@ def get_probability_topology_unchanged_given_b_and_tr_from_table(
     term3 *= inner
     return 2 * (term1 + term2) + term3
 
+
 ###################################################################
 # Get prob. topology-change given branch
 ###################################################################
 
 def get_probability_tree_unchanged_given_b(
-    species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
-    branch: int) -> float:
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    branch: int,
+) -> float:
     """Return prob tree-change does not occur given recomb on branch b.
 
     Parameters
@@ -455,8 +474,11 @@ def get_probability_tree_unchanged_given_b(
     etable = get_genealogy_embedding_table(species_tree, genealogy, imap)
     return get_probability_tree_unchanged_given_b_from_table(etable, branch)
 
+
 def get_probability_tree_unchanged_given_b_from_table(
-    table: pd.DataFrame, branch: int) -> float:
+    table: pd.DataFrame,
+    branch: int,
+) -> float:
     """Return prob tree-change does not occur given recomb on branch b.
 
     Parameters
@@ -491,9 +513,13 @@ def get_probability_tree_unchanged_given_b_from_table(
         prob += term1 + (term2_inner * term2_outer * term3)
     return (1 / (tbu - tbl)) * prob
 
+
 def get_probability_topology_unchanged_given_b(
-    species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
-    branch: int) -> float:
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    branch: int,
+) -> float:
     """Return prob topology-change does not occur given recomb on branch b.
 
     Parameters
@@ -512,12 +538,13 @@ def get_probability_topology_unchanged_given_b(
     sibling = genealogy[branch].get_sisters()[0].idx
     return get_probability_topology_unchanged_given_b_from_table(table, branch, sibling, parent)
 
+
 def get_probability_topology_unchanged_given_b_from_table(
     table: pd.DataFrame,
     branch: int,
     sibling: int,
     parent: int,
-    ) -> float:
+) -> float:
     """Return prob topology-change does not occur given recomb on branch b at time t.
 
     Parameters
@@ -557,6 +584,7 @@ def get_probability_topology_unchanged_given_b_from_table(
     # logger.info(f"branch {branch}, sum-pb2={pb2:.3f}")
     return (1 / (t_ub - t_lb)) * (pb1 + pb2)
 
+
 ###################################################################
 # Get probability given genealogy
 ###################################################################
@@ -565,7 +593,7 @@ def get_probability_tree_unchanged(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
-    ) -> float:
+) -> float:
     """Return probability that recombination causes no-change.
 
     Returns the probability under the MS-SMC' that recombination
@@ -593,11 +621,12 @@ def get_probability_tree_unchanged(
     """
     return 1 - get_probability_tree_change(species_tree, genealogy, imap)
 
+
 def get_probability_no_change(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
-    ) -> float:
+) -> float:
     """Return probability that recombination causes no-change.
 
     Returns the probability under the MS-SMC' that recombination
@@ -625,11 +654,12 @@ def get_probability_no_change(
     """
     return 1 - get_probability_tree_change(species_tree, genealogy, imap)
 
+
 def get_probability_tree_change(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
-    ) -> float:
+) -> float:
     """Return probability that recombination causes a tree-change.
 
     Returns the probability that recombination occurring on this
@@ -674,11 +704,12 @@ def get_probability_tree_change(
             total_prob += (gnode.dist / sumlen) * prob
     return 1 - total_prob
 
+
 def get_probability_topology_change(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
-    ) -> float:
+) -> float:
     """Return probability that recombination causes a tree-change.
 
     Returns the probability under the MS-SMC' that recombination
@@ -709,11 +740,12 @@ def get_probability_topology_change(
     total_prob = get_probability_topology_unchanged(species_tree, genealogy, imap)
     return 1 - total_prob
 
+
 def get_probability_topology_unchanged(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
-    ) -> float:
+) -> float:
     """Return probability that recombination causes a tree-change.
 
     Returns the probability under the MS-SMC' that recombination
@@ -764,7 +796,7 @@ def get_probability_topology_unchanged(
             # contribute to total probability of unchanged topology as
             # the proportion of total edge len represented by this branch.
             total_prob += (gnode.dist / sumlen) * topo_unchanged_prob
-    return total_prob    
+    return total_prob
 
 
 ###################################################################
@@ -774,17 +806,18 @@ def get_probability_topology_unchanged(
 def get_expected_waiting_distance_to_recombination_event(
     genealogy: ToyTree,
     recombination_rate: float,
-    ) -> float:
+) -> float:
     """..."""
     return get_waiting_distance_to_recombination_event_rv(
         genealogy, recombination_rate).mean()
+
 
 def get_expected_waiting_distance_to_no_change(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
-    ) -> float:
+) -> float:
     """..."""
     return get_waiting_distance_to_no_change_rv(
         species_tree,
@@ -792,12 +825,13 @@ def get_expected_waiting_distance_to_no_change(
         imap,
         recombination_rate).mean()
 
+
 def get_expected_waiting_distance_to_tree_change(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
-    ) -> float:
+) -> float:
     """..."""
     return get_waiting_distance_to_tree_change_rv(
         species_tree,
@@ -805,18 +839,20 @@ def get_expected_waiting_distance_to_tree_change(
         imap,
         recombination_rate).mean()
 
+
 def get_expected_waiting_distance_to_topology_change(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
-    ) -> float:
+) -> float:
     """..."""
     return get_waiting_distance_to_topology_change_rv(
         species_tree,
         genealogy,
         imap,
         recombination_rate).mean()
+
 
 ###################################################################
 # Get scipy exponential random variable parameterized by lambda
@@ -825,7 +861,7 @@ def get_expected_waiting_distance_to_topology_change(
 def get_waiting_distance_to_recombination_event_rv(
     genealogy: ToyTree,
     recombination_rate: float,
-    ) -> stats._distn_infrastructure.rv_frozen:
+) -> stats._distn_infrastructure.rv_frozen:
     r"""Return the exponential probability density for waiting distance
     to next recombination event.
 
@@ -856,12 +892,13 @@ def get_waiting_distance_to_recombination_event_rv(
     lambda_ = sumlen * recombination_rate
     return stats.expon.freeze(scale=1/lambda_)
 
+
 def get_waiting_distance_to_no_change_rv(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
-    ) -> stats._distn_infrastructure.rv_frozen:
+) -> stats._distn_infrastructure.rv_frozen:
     r"""Return the exponential probability density for waiting distance
     to next no-change event.
 
@@ -898,12 +935,13 @@ def get_waiting_distance_to_no_change_rv(
     lambda_ = sumlen * prob_tree * recombination_rate
     return stats.expon.freeze(scale=1/lambda_)
 
+
 def get_waiting_distance_to_tree_change_rv(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
-    ) -> stats._distn_infrastructure.rv_frozen:
+) -> stats._distn_infrastructure.rv_frozen:
     r"""Return the exponential probability density for waiting distance
     to next tree-change event.
 
@@ -935,12 +973,13 @@ def get_waiting_distance_to_tree_change_rv(
     lambda_ = sumlen * prob_tree * recombination_rate
     return stats.expon.freeze(scale=1/lambda_)
 
+
 def get_waiting_distance_to_topology_change_rv(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
-    ) -> stats._distn_infrastructure.rv_frozen:
+) -> stats._distn_infrastructure.rv_frozen:
     """...
 
     Parameters
@@ -954,7 +993,8 @@ def get_waiting_distance_to_topology_change_rv(
     sumlen = sum(i.dist for i in genealogy if not i.is_root())
     prob_topo = get_probability_topology_change(species_tree, genealogy, imap)
     lambda_ = sumlen * prob_topo * recombination_rate
-    return stats.expon.freeze(scale=1/lambda_)
+    return stats.expon.freeze(scale=1 / lambda_)
+
 
 ###################################################################
 # Plotting
@@ -966,7 +1006,7 @@ def plot_waiting_distance_distributions(
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
     **kwargs,
-    ) -> toyplot.canvas.Canvas:
+) -> toyplot.canvas.Canvas:
     """Return a toyplot canvas with waiting distance distributions.
     """
     canvas = toyplot.Canvas(
@@ -994,9 +1034,8 @@ def plot_waiting_distance_distributions(
         xs_ = np.linspace(dist.ppf(0.025), dist.ppf(0.975), 100)
         ys_ = dist.pdf(xs_)
         axes.plot(xs_, ys_, stroke_width=4)
-        axes.fill(xs_, ys_, opacity=1/3)
+        axes.fill(xs_, ys_, opacity=1 / 3)
     return canvas
-
 
 
 def plot_edge_probabilities(
@@ -1004,9 +1043,9 @@ def plot_edge_probabilities(
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
     branch: int,
-    stack: int=1,
+    stack: int = 1,
     **kwargs,
-    ) -> toyplot.canvas.Canvas:
+) -> toyplot.canvas.Canvas:
     """Return a toyplot canvas with probabilities along an edge.
 
     """
@@ -1096,7 +1135,7 @@ if __name__ == "__main__":
 
     # Setup a species tree with edge lengths in generations
     SPTREE = toytree.tree("(((A,B),C),D);")
-    SPTREE.set_node_data("height", inplace=True, default=0, mapping={
+    SPTREE.set_node_data("height", inplace=True, default=0, data={
         4: 200_000, 5: 400_000, 6: 600_000,
     })
 
@@ -1106,7 +1145,7 @@ if __name__ == "__main__":
     # Setup a genealogy embedded in the species tree (see below to
     # instead simulate one but here we just create it from newick.)
     GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
-    GTREE.set_node_data("height", inplace=True, default=0, mapping={
+    GTREE.set_node_data("height", inplace=True, default=0, data={
         7: 100_000, 8: 120_000, 9: 300_000, 10: 450_000, 11: 650_000, 12: 800_000,
     })
 
@@ -1161,13 +1200,13 @@ if __name__ == "__main__":
 
     # =================================================================
     SPTREE = toytree.tree("(((A,B),C),D);")
-    SPTREE.set_node_data("height", inplace=True, default=0, mapping={
+    SPTREE.set_node_data("height", inplace=True, default=0, data={
         4: 200_000, 5: 400_000, 6: 600_000,
     })
     SPTREE.set_node_data("Ne", inplace=True, default=1_000);
 
     GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
-    GTREE.set_node_data("height", inplace=True, default=0, mapping={
+    GTREE.set_node_data("height", inplace=True, default=0, data={
         7: 100_000, 8: 120_000, 9: 300_000, 10: 450_000, 11: 650_000, 12: 800_000,
     })
     IMAP = {
