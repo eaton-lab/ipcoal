@@ -4,8 +4,5 @@
 
 """
 
-from ipcoal.msc.msc import (
-    get_loglik_gene_tree_msc,
-    get_msc_embedded_gene_tree_table,
-    get_loglik_gene_tree_msc_from_table,
-)
+from ipcoal.msc.embedding import *
+from ipcoal.msc.likelihood import *
