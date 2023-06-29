@@ -18,6 +18,7 @@ from typing import Dict, Sequence
 import itertools
 import numpy as np
 import pandas as pd
+from numba import njit
 from loguru import logger
 import toytree
 import ipcoal
@@ -255,31 +256,89 @@ def get_loglik_gene_tree_msc(
     return loglik
 
 
+##################################################################
+
+@njit
+def get_msc_loglik_from_embedding_table(table: np.ndarray) -> float:
+    """Return the log probability of a censored species tree interval.
+
+    Parameters
+    ----------
+    ...
+    """
+    ntrees = int(table[:, 6].max())
+    loglik = np.zeros(ntrees, dtype=np.float64)
+
+    # iterate over gtrees
+    for gidx in range(ntrees):
+        arr = table[table[:, 6] == gidx]
+
+        # iterate over species tree intervals
+        for sval in range(max(arr[:, 2])):
+            narr = arr[arr[:, 2] == sval]
+
+            # get coal rate in this interval
+            rate = 1 / (2 * narr[0, 3])
+
+            # get probability of each observed coalescence
+            prob_coal = 1.
+            for ridx in range(narr.shape[0] - 1):
+                nedges = narr[ridx, 4]
+                npairs = (nedges * (nedges - 1)) / 2
+                dist = narr[ridx, 5]
+                prob_coal *= rate * np.exp(-npairs * rate * dist)
+
+            # get probability no coal in final interval
+            prob_no_coal = 1.
+            if narr[-1, 4] > 1:
+                nedges = narr[-1, 4]
+                dist = narr[-1, 5]
+                npairs = (nedges * (nedges - 1)) / 2
+                prob_no_coal = np.exp(-npairs * rate * dist)
+
+            # multiply to get joint prob dist of the gt in the pop
+            prob = prob_coal * prob_no_coal
+            if prob > 0:
+                loglik[gidx] = np.log(prob)
+    return -loglik.sum()
+
+
 if __name__ == "__main__":
 
     ipcoal.set_log_level("INFO")
 
-    # simulate genealogies
-    RECOMB = 1e-9
-    MUT = 1e-9
-    NEFF = 5e5
-    THETA = 4 * NEFF * MUT
-
-    # setup species tree model
-    SPTREE = toytree.rtree.unittree(ntips=3, treeheight=1e6, seed=123)
-    SPTREE = SPTREE.set_node_data("Ne", default=NEFF, data={0: 1e5})
-
-    # setup simulation
-    MODEL = ipcoal.Model(SPTREE, seed_trees=123, nsamples=5)
-    MODEL.sim_trees(10)
+    from ipcoal.msc.embedding import Embedding
+    SPTREE = toytree.rtree.baltree(2, treeheight=1e6)
+    MODEL = ipcoal.Model(SPTREE, Ne=200_000, nsamples=4, seed_trees=123)
+    MODEL.sim_trees(1, 1e5)
+    GENEALOGIES = toytree.mtree(MODEL.df.genealogy)
     IMAP = MODEL.get_imap_dict()
-    GTREES = toytree.mtree(MODEL.df.genealogy)
-    # GTREE.draw(ts='c', height=400)
+    data = Embedding(MODEL.tree, GENEALOGIES, IMAP)
+    print(data.table)
+    print(data.table.dtypes)
+    print(get_msc_loglik_from_embedding_table(data.table.values))
 
-    table = get_msc_embedded_gene_tree_table(SPTREE, GTREES[0], IMAP)
-    print(table)
-    print(get_loglik_gene_tree_msc_from_table(table))
-    print(get_loglik_gene_tree_msc(SPTREE, GTREES, IMAP))
+    # # simulate genealogies
+    # RECOMB = 1e-9
+    # MUT = 1e-9
+    # NEFF = 5e5
+    # THETA = 4 * NEFF * MUT
+
+    # # setup species tree model
+    # SPTREE = toytree.rtree.unittree(ntips=3, treeheight=1e6, seed=123)
+    # SPTREE = SPTREE.set_node_data("Ne", default=NEFF, data={0: 1e5})
+
+    # # setup simulation
+    # MODEL = ipcoal.Model(SPTREE, seed_trees=123, nsamples=5)
+    # MODEL.sim_trees(10)
+    # IMAP = MODEL.get_imap_dict()
+    # GTREES = toytree.mtree(MODEL.df.genealogy)
+    # # GTREE.draw(ts='c', height=400)
+
+    # table = get_msc_embedded_gene_tree_table(SPTREE, GTREES[0], IMAP)
+    # print(table)
+    # print(get_loglik_gene_tree_msc_from_table(table))
+    # print(get_loglik_gene_tree_msc(SPTREE, GTREES, IMAP))
 
     # TEST_VALUES = np.logspace(np.log10(NEFF) - 1, np.log10(NEFF) + 1, 19)
     # test_logliks = []

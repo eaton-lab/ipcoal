@@ -15,7 +15,7 @@ Example
 >>> model.draw_seqview()
 """
 
-__version__ = "0.4.dev1"
+__version__ = "0.4.dev2"
 __author__ = "Patrick McKenzie and Deren Eaton"
 
 from ipcoal.model import Model
@@ -23,6 +23,7 @@ from ipcoal.utils import utils
 from ipcoal.core.utils import *
 import ipcoal.phylo
 import ipcoal.smc
+import ipcoal.msc
 
 # start the logger at log_level WARNING
 from ipcoal.utils.logger_setup import set_log_level
