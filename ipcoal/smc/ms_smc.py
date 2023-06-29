@@ -30,7 +30,7 @@ def get_genealogy_embedding_table(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
-    ) -> pd.DataFrame:
+) -> pd.DataFrame:
     """Return a DataFrame with intervals of coal and non-coal events.
 
     Each row in the dataframe represents an interval of time along
@@ -133,6 +133,7 @@ def get_genealogy_embedding_table(
     # table['rate'] = table.nedges / table.neff
     return table
 
+
 def get_genealogy_embedding_edge_path(table: pd.DataFrame, branch: int) -> pd.DataFrame:
     """Return the gene tree embedding table intervals a gtree edge
     passes through.
@@ -145,6 +146,7 @@ def get_genealogy_embedding_edge_path(table: pd.DataFrame, branch: int) -> pd.Da
         An integer index (idx) label to select a genealogy branch.
     """
     return table[table.edges.apply(lambda x: branch in x)]
+
 
 ###################################################################
 # Get re-coalescent in piecewise funtions
@@ -201,6 +203,7 @@ def _get_pij(itab: pd.DataFrame, idx: int, jdx: int) -> float:
     term3 = np.exp(term3_inner_a - term3_inner_b)
     return term1 * term2 * term3
 
+
 def _get_sum_pb1(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> float:
     """Return value for the $p_{b,1}$ variable.
 
@@ -225,7 +228,7 @@ def _get_sum_pb1(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
 
     # get intervals spanning branch b and c
     ftab = pd.concat([btab, ptab.loc[ptab.index.difference(btab.index)]])
-    ftab.sort_index(inplace=True) # maybe not necessary
+    ftab.sort_index(inplace=True)  # maybe not necessary
 
     # iterate over all intervals from 0 to m (indices of utab)
     utab = btab[btab.index < mtab.index.min()]
@@ -253,6 +256,7 @@ def _get_sum_pb1(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
         pbval += (1 / btab.nedges[idx]) * (btab.dist[idx] + (first_term * second_term))
     return pbval
 
+
 def _get_sum_pb2(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> float:
     """Return value for the $p_{b,2}$ variable.
 
@@ -271,7 +275,7 @@ def _get_sum_pb2(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
     """
     # get intervals spanning branch b and c
     ftab = pd.concat([btab, ptab.loc[ptab.index.difference(btab.index)]])
-    ftab.sort_index(inplace=True) # maybe not necessary
+    ftab.sort_index(inplace=True)  # maybe not necessary
 
     # value to return, summed over all intervals from m to b
     pbval = 0
@@ -283,7 +287,7 @@ def _get_sum_pb2(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
         if estop > 100:
             first_term = 1e15
         else:
-            first_term =  btab.neff[idx] * (np.exp(estop) - np.exp(estart))
+            first_term = btab.neff[idx] * (np.exp(estop) - np.exp(estart))
 
         # p_ij across intervals on b
         sum1 = sum(_get_pij(btab, idx, bidx) for bidx in btab.index)
@@ -295,10 +299,10 @@ def _get_sum_pb2(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
         pbval += (1 / btab.nedges[idx]) * ((2 * btab.dist[idx]) + (first_term * second_term))
     return pbval
 
+
 ###################################################################
 # Get prob. tree- or topo-change given branch and time
 ###################################################################
-
 
 def get_probability_tree_unchanged_given_b_and_tr(
     species_tree: ToyTree,
@@ -689,8 +693,8 @@ def get_probability_tree_change(
     sumlen = sum(i.dist for i in genealogy if not i.is_root())
 
     # set NA values for root node edge arbitrarily high
-    etable.loc[etable.index[-1], 'stop'] = 1e15
-    etable.loc[etable.index[-1], 'dist'] = 1e15
+    etable.loc[etable.index[-1], 'stop'] = np.inf  # 1e15
+    etable.loc[etable.index[-1], 'dist'] = np.inf  # 1e15
 
     # traverse over all edges of the genealogy
     total_prob = 0

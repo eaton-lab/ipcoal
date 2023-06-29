@@ -214,7 +214,8 @@ def _concat_embedding_tables(etables: Sequence[pd.DataFrame]) -> pd.DataFrame:
         bidxs = pd.DataFrame(bidxs, columns=range(ninodes))
         btable = pd.concat([etable, bidxs], axis=1)
         btable = btable.drop(columns=["coal", "edges"])
-        btable.iloc[-1, [1, 5]] = int(1e12)
+        btable.iloc[-1, [1, 5]] = np.inf
+        btable = btable.astype({"stop": float, "dist": float})
         btables.append(btable)
         # if not gidx % 1000:
         #     logger.debug(f'concat genealogy index: {gidx}')
