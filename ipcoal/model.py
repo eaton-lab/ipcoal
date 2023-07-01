@@ -154,7 +154,7 @@ class Model:
         self._warn_bad_kwargs(kwargs)
 
         # store user input args
-        self.tree = tree if tree is not None else "(p);"
+        self.tree = tree if tree is not None else "(p:0);"
         self.neff = Ne       # upper-case only used in input arg.
         self.nsamples = nsamples
         self.admixture_edges = admixture_edges
@@ -675,7 +675,7 @@ class Model:
         """
         if idxs is None:
             idxs = list(self.df.index)[:4]
-        mtre = toytree.mtree(self.df.genealogy[idxs].tolist())
+        mtre = toytree.mtree(self.df.genealogy[idxs])
         canvas, axes, mark = mtre.draw(ts='c', tip_labels=True, **kwargs)
         return canvas, axes, mark
 
@@ -773,9 +773,9 @@ class Model:
 
     def _get_tree_sequence_generator(
         self,
-        # seed: int,
         nsites: int = 1,
         snp: bool = False,
+        seed: Optional[int] = None,
     ) -> Iterator['tskit.trees.TreeSequence']:
         """Return a TreeSequence generator from `ms.sim_ancestry`.
 
@@ -787,10 +787,13 @@ class Model:
 
         Parameters
         ----------
-        seed: int
-            This requires a seed, and the internal functions that
-            use this function should pre-generate the seeds
+        seed: None, int, or numpy RNG
+            If None then an integer is drawn from the Model.rng_trees
+            generator. If a seed is entered it is used instead of this.
         """
+        # sample from RNG if no seed is provided
+        if seed is None:
+            seed = self.rng_trees.integers(2**31)
         # snp flag to ensure a single genealogy is returned
         if snp and nsites != 1:
             raise IpcoalError(
@@ -801,7 +804,7 @@ class Model:
             sequence_length=(None if self._recomb_is_map else nsites),
             recombination_rate=(None if snp or self._recomb_is_map else self.recomb),
             num_replicates=(int(1e20) if snp else 1),
-            random_seed=self.rng_trees.integers(2**31),
+            random_seed=seed,
             discrete_genome=True,
             record_full_arg=self.record_full_arg,
             model=self.ancestry_model,
@@ -813,6 +816,7 @@ class Model:
         nloci: int = 1,
         nsites: int = 1,
         precision: int = 14,
+        nproc: int = 1,
     ) -> None:
         """Simulate tree sequence without mutations
 
@@ -830,6 +834,10 @@ class Model:
         precision: float
             The precision of float values recorded in newick tree
             strings in the .df output summary table.
+        nproc: int
+            Number of parallel jobs. Default=1 (no parallel). The same
+            exact result is returned based on rng_trees regardless of
+            parallelization. Speed-up is less than linear with nproc.
 
         See Also
         --------
