@@ -2,9 +2,8 @@
 
 """Calculate likelihood of a gene tree embedded in a species tree.
 
-TODO
-----
-make faster version using numpy and jit.
+Given a distribution of gene trees the likelihood of different species
+tree models can be compared.
 
 References
 ----------
@@ -16,10 +15,11 @@ References
 
 from typing import Dict, Sequence
 import numpy as np
-from numba import njit
+from numba import njit, prange
+import pandas as pd
 from loguru import logger
 import toytree
-from ipcoal.msc.embedding import get_genealogy_embedding_table
+from ipcoal.msc import get_genealogy_embedding_table
 
 logger = logger.bind(name="ipcoal")
 
@@ -56,8 +56,27 @@ def get_msc_loglik(
     return loglik
 
 
-# @njit
 def get_msc_loglik_from_embedding_table(table: np.ndarray) -> float:
+    """Return sum -loglik of genealogies embedded in a species tree.
+
+    Parameters
+    ----------
+    table: np.ndarray or pd.DataFrame
+        An embedding table from `get_genealogy_embedding_table()`.
+
+    Examples
+    --------
+    >>> args = (sptree, gtrees, imap, False)
+    >>> etable = ipcoal.msc.get_genealogy_embedding_table(*args)
+    >>> loglik = get_msc_loglik_from_embedding_table(etable)
+    """
+    if isinstance(table, pd.DataFrame):
+        return _get_msc_loglik_from_embedding_table(table.values)
+    return _get_msc_loglik_from_embedding_table(table)
+
+
+@njit  # (parallel=True)
+def _get_msc_loglik_from_embedding_table(table: np.ndarray) -> float:
     """Return sum -loglik of genealogies embedded in a species tree.
 
     Parameters
@@ -73,39 +92,41 @@ def get_msc_loglik_from_embedding_table(table: np.ndarray) -> float:
     >>> etable = ipcoal.msc.get_genealogy_embedding_table(*args)
     >>> loglik = get_msc_loglik_from_embedding_table(etable)
     """
-    ntrees = int(table[:, 6].max())
+    ntrees = int(table[-1, 6]) + 1
     logliks = np.zeros(ntrees, dtype=np.float64)
 
     # iterate over gtrees
-    for gidx in range(ntrees):
+    for gidx in prange(ntrees):
         arr = table[table[:, 6] == gidx]
 
         # iterate over species tree intervals
         loglik = 0.
-        for sval in range(int(max(arr[:, 2]) + 1)):
-            narr = arr[arr[:, 2] == sval]
+        for sval in range(int(arr[-1, 2] + 1)):
 
             # get coal rate in this interval
+            narr = arr[arr[:, 2] == sval]
             rate = 1 / (2 * narr[0, 3])
 
-            # get probability of each observed coalescence
-            prob_coal = 1.
+            # prob of all events in this sptree interval
+            prob = 1.
+            # get prob of each coal event in this sptree interval
             for ridx in range(narr.shape[0] - 1):
                 nedges = narr[ridx, 4]
                 npairs = (nedges * (nedges - 1)) / 2
+                lambda_ = rate * npairs
                 dist = narr[ridx, 5]
-                prob_coal *= rate * np.exp(-npairs * rate * dist)
+                # prob *= (1 / npairs) * lambda_ * np.exp(-lambda_ * dist)
+                prob *= rate * np.exp(-lambda_ * dist)
 
-            # get probability no coal in final interval
-            prob_no_coal = 1.
-            if narr[-1, 4] > 1:
-                nedges = narr[-1, 4]
-                dist = narr[-1, 5]
-                npairs = (nedges * (nedges - 1)) / 2
-                prob_no_coal = np.exp(-npairs * rate * dist)
+            # get prob no coal in remaining time of interval
+            nedges = narr[-1, 4]
+            npairs = (nedges * (nedges - 1)) / 2
+            lambda_ = rate * npairs
+            dist = narr[-1, 5]
+            if not np.isinf(dist):
+                prob *= np.exp(-lambda_ * dist)
 
-            # multiply to get joint prob dist of the gt in the pop
-            prob = prob_coal * prob_no_coal
+            # store as loglik
             if prob > 0:
                 loglik += np.log(prob)
             else:
@@ -147,6 +168,12 @@ def test_kingman(neff: float = 1e5, nsamples: int = 10, ntrees: int = 500):
 
 def test_msc(neff: float = 1e5, nsamples: int = 4, ntrees: int = 500):
     """Return a plot of the likelihood of constant Ne in multipop tree.
+
+    This shows that the true Ne has the best likelihood score compared
+    to incorrect Ne values.
+
+    The gene tree distribution kept constant and the MSC model
+    parameters are varied at several parameters.
     """
     import toyplot
     import toytree
