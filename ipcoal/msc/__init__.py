@@ -4,5 +4,5 @@
 
 """
 
-from ipcoal.msc.embedding import *
-from ipcoal.msc.likelihood import *
+from ipcoal.msc.src.embedding import *
+from ipcoal.msc.src.likelihood import *
