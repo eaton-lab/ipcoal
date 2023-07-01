@@ -8,14 +8,13 @@
 """
 
 from typing import Mapping, Sequence, Union
-from concurrent.futures import ProcessPoolExecutor
 from loguru import logger
 import numpy as np
 import pandas as pd
 import toytree
 
 logger = logger.bind(name="ipcoal")
-
+COLUMNS = ['start', 'stop', 'st_node', 'neff', 'nedges', 'dist', 'gidx']
 __all__ = ["get_genealogy_embedding_table"]
 
 
@@ -23,38 +22,14 @@ def _get_fast_genealogy_embedding_table(
     species_tree: toytree.ToyTree,
     genealogy: toytree.ToyTree,
     imap: Mapping[str, Sequence[str]],
-    df: bool = True,
-    encode: bool = False,
-    gidx: int = 0,
+    df: bool,
+    encode: bool,
+    gidx: int,
 ) -> Union[pd.DataFrame, np.ndarray]:
-    """Return a genealogy embedding table.
+    """Internal function to embed a single genealogy.
 
-    The embedding table represents intervals in a species tree where
-    that have piece-wise constant coalescent rates and which are
-    dividied by coalescent events in the gene tree, or speciation
-    events in the species tree.
-
-    Parameters
-    ----------
-    species_tree: ToyTree
-        ...
-    genealogy: ToyTree
-        ...
-    imap: Dict[str, List[str]]
-        ...
-    encode: bool
-        If True then the genealogy Node IDs in each interval are one-
-        hot-encoded, otherwise they are excluded.
-    df: bool
-        If True the table is returned as a DataFrame with column labels
-        else it is returned as a numpy array.
-    gidx: int or None
-        If a genealogy index is provided then a column is added that
-        is filled with this integer.
-
-    Examples
-    --------
-    >>> ...
+    This function is used within `get_genealogy_embedding_table()`.
+    See the latter function for usage.
     """
     # store temporary results in a dict
     split_data = []
@@ -103,7 +78,7 @@ def _get_fast_genealogy_embedding_table(
                 st_node._idx,
                 st_node.Ne,
                 len(edges),
-                0,
+                0.,
                 gidx,
             ])
             edge_encode.append(sorted(edges))
@@ -123,54 +98,35 @@ def _get_fast_genealogy_embedding_table(
             st_node._idx,
             st_node.Ne,
             len(edges),
-            0,
+            0.,
             gidx,
         ])
         edge_encode.append(sorted(edges))
 
     # to array
     arr = np.vstack(split_data)
+    # calculate dists
+    arr[:, 5] = arr[:, 1] - arr[:, 0]
+
+    # create one-hot-encoded node IDs
+    if encode:
+        encoding = np.zeros((len(edge_encode), nnodes), dtype=np.uint8)
+        for interval, nodes in enumerate(edge_encode):
+            encoding[interval, nodes] = 1
 
     # format as a sleek float array
     if not df:
-        arr[:, 5] = arr[:, 1] - arr[:, 0]
-
-        # return with coal IDs in list
-        if not encode:
-            return arr
-            # return np.c_[arr, dist, np.array(edge_encode, dtype=object)]
-
-        # return with coal IDs one-hot-encoded
-        encoding = []
-        for nodes in edge_encode:
-            e = np.zeros(nnodes)
-            e[nodes] = 1
-            encoding.append(e)
-        return np.c_[arr, encoding]
+        if encode:
+            return np.c_[arr, encoding]
+        return arr
 
     # format as a nice (but slow) human readable dataframe
-    table = pd.DataFrame(
-        data=split_data,
-        columns=['start', 'stop', 'st_node', 'neff', 'nedges', 'dist', 'gidx']
-    )
-    table['dist'] = table.stop - table.start
-    if not encode:
-        return table
-        # table['edges'] = edge_encode
-
-    # one-hot-encode the edges
-    encoding = []
-    for nodes in edge_encode:
-        e = np.zeros(nnodes)
-        e[nodes] = 1
-        encoding.append(e)
-    encoding = pd.DataFrame(
-        data=encoding,
-        columns=range(nnodes),
-        dtype=np.uint8,
-    )
-    # table = table.drop(columns=["coal", "edges"])
-    return pd.concat([table, encoding], axis=1)
+    table = pd.DataFrame(data=split_data, columns=COLUMNS)
+    table.dist = table.stop - table.start
+    if encode:
+        encoding = pd.DataFrame(encoding, columns=list(range(nnodes)))
+        return pd.concat([table, encoding], axis=1)
+    return table
 
 
 def get_genealogy_embedding_table(
@@ -178,9 +134,43 @@ def get_genealogy_embedding_table(
     genealogies: Sequence[toytree.ToyTree],
     imap: Mapping[str, Sequence[str]],
     df: bool = True,
-    encode: bool = False,
+    encode: bool = True,
 ) -> Union[pd.DataFrame, np.ndarray]:
-    """Return a genealogy embedding table."""
+    """Return a genealogy embedding table.
+
+    The embedding table represents intervals in a species tree where
+    that have piece-wise constant coalescent rates and which are
+    dividied by coalescent events in the gene tree, or speciation
+    events in the species tree.
+
+    Raises ipcoalError if genealogy cannot be embedded in the species
+    tree (e.g., coalescence earlier than species divergence allows).
+
+    Parameters
+    ----------
+    species_tree: ToyTree
+        A ToyTree with Ne values mapped to Nodes and edge lengths in
+        units of generations.
+    genealogies: ToyTree or Sequence[ToyTree]
+        One or more ToyTrees representing gene trees embedded in the
+        species tree with edge lengths in units of generations.
+    imap: Dict[str, List[str]]
+        A dict mapping gene tree tip names to species tree tips names.
+    df: bool
+        If True the table is returned as a DataFrame with column labels
+        else it is returned as a numpy array (faster).
+    encode: bool
+        If True genealogy Node IDs are included as one-hot-encoded.
+
+    Examples
+    --------
+    >>> sptree = toytree.rtree.imbtree(ntips=4, treeheight=1e6)
+    >>> model = ipcoal.Model(sptree, Ne=1e5, nsamples=2)
+    >>> model.sim_trees(10)
+    >>> imap = model.get_imap_dict()
+    >>> gtrees = model.df.genealogy
+    >>> table = get_genealogy_embedding_table(model.tree, gtrees, imap)
+    """
     # get genealogies as Sequence[ToyTree]
     if isinstance(genealogies, (toytree.ToyTree, str)):
         genealogies = [genealogies]
@@ -204,7 +194,7 @@ if __name__ == "__main__":
     import ipcoal
     SPTREE = toytree.rtree.baltree(2, treeheight=1e6)
     MODEL = ipcoal.Model(SPTREE, Ne=200_000, nsamples=4, seed_trees=123)
-    MODEL.sim_trees(10)
+    MODEL.sim_trees(1)
     GENEALOGIES = toytree.mtree(MODEL.df.genealogy)
     IMAP = MODEL.get_imap_dict()
-    print(get_genealogy_embedding_table(MODEL.tree, GENEALOGIES, IMAP, encode=False))
+    print(get_genealogy_embedding_table(MODEL.tree, GENEALOGIES, IMAP, encode=True).iloc[:, :7])
