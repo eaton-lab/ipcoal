@@ -5,8 +5,7 @@
 This allows for faster jit-compiled calculation of E[waiting distances].
 """
 
-
-from typing import Mapping, Sequence, Optional, Tuple
+from typing import Mapping, Sequence, Optional, Tuple, Union, Optional
 from abc import ABC
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
@@ -91,10 +90,15 @@ class Embedding(ABC):
             "e.g., sptree.set_node_data('Ne', default=10000, inplace=True).")
 
         self.table: pd.DataFrame = None
+        """: dataframe for easy viewing."""
         self.earr: np.ndarray = None
+        """: float copy of table w/ Ne stored as 2Ne."""
         self.barr: np.ndarray = None
+        """: branch lengths array."""
         self.sarr: np.ndarray = None
+        """: summed branch lenths array."""
         self.rarr: np.ndarray = None
+        """: Node relationships array."""
         self.run()
 
     def run(self):
@@ -141,6 +145,22 @@ class TopologyEmbedding(Embedding):
 
     def get_data(self):
         return (self.earr, self.barr, self.sarr, self.rarr)
+
+
+
+
+def get_multi_genealogy_embedding_array(
+    species_tree: toytree.ToyTree,
+    genealogies: Sequence[toytree.ToyTree],
+    imap: Mapping[str, Sequence[str]],
+) -> np.ndarray:
+    """Return ndarray of genealogy embedding."""
+    arrs = []
+    for gidx, gtree in enumerate(genealogies):
+        arr = get_fast_genealogy_embedding_table(
+            species_tree, gtree, imap, encode=True, gidx=gidx, df=False)
+        arrs.append(arr)
+    return np.vstack(arrs)
 
 
 def _parallel_get_multigenealogy_embedding_table(
@@ -274,5 +294,7 @@ if __name__ == "__main__":
     MODEL.sim_trees(1, 1e5)
     GENEALOGIES = toytree.mtree(MODEL.df.genealogy)
     IMAP = MODEL.get_imap_dict()
-    data = TopologyEmbedding(MODEL.tree, GENEALOGIES, IMAP)
-    print(data.table)
+    a = get_multi_genealogy_embedding_array(MODEL.tree, GENEALOGIES, IMAP)
+    print(pd.DataFrame(a))
+    # data = TopologyEmbedding(MODEL.tree, GENEALOGIES, IMAP)
+    # print(data.table)

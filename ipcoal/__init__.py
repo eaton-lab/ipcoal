@@ -15,7 +15,7 @@ Example
 >>> model.draw_seqview()
 """
 
-__version__ = "0.4.dev2"
+__version__ = "0.4.dev3"
 __author__ = "Patrick McKenzie and Deren Eaton"
 
 from ipcoal.model import Model

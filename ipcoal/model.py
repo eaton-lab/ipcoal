@@ -147,6 +147,7 @@ class Model:
         seed_mutations: Optional[int] = None,
         store_tree_sequences: bool = False,
         record_full_arg: bool = False,
+        discrete_genome: bool = True,
         **kwargs,
     ):
 
@@ -164,6 +165,7 @@ class Model:
         self.subst_model = subst_model
         self.store_tree_sequences = store_tree_sequences
         self.record_full_arg = record_full_arg
+        self.discrete_genome = discrete_genome
 
         # public attrs to be filled, or storing init args.
         self.samples: List[ms.SampleSet] = None
@@ -758,7 +760,7 @@ class Model:
             sequence_length=(None if self._recomb_is_map else nsites),
             recombination_rate=(None if self._recomb_is_map else self.recomb),
             random_seed=self.rng_trees.integers(2**31),
-            discrete_genome=True,
+            discrete_genome=self.discrete_genome,
             record_full_arg=self.record_full_arg,
             model=self.ancestry_model,
         )
@@ -767,7 +769,7 @@ class Model:
             rate=self.mut,
             model=self.subst_model,
             random_seed=self.rng_muts.integers(2**31),
-            discrete_genome=True,
+            discrete_genome=self.discrete_genome,
         )
         return mutated_ts
 
@@ -805,7 +807,7 @@ class Model:
             recombination_rate=(None if snp or self._recomb_is_map else self.recomb),
             num_replicates=(int(1e20) if snp else 1),
             random_seed=seed,
-            discrete_genome=True,
+            discrete_genome=self.discrete_genome,
             record_full_arg=self.record_full_arg,
             model=self.ancestry_model,
         )
@@ -851,7 +853,7 @@ class Model:
         >>> mod.sim_trees(nloci=1, nsites=1000)
         >>> mod.df
         """
-        sim_trees(self, nloci, nsites, precision)
+        sim_trees(self, nloci, nsites, precision, nproc)
 
     def sim_loci(
         self,
@@ -1351,7 +1353,7 @@ if __name__ == "__main__":
     MODEL = ipcoal.Model(TREE, Ne=10000, nsamples=2)
     MODEL = ipcoal.Model(TREE, nsamples=2)
 
-    MODEL.sim_trees(5)
+    MODEL.sim_trees(5, 1000)
     print(MODEL.df)
     print(MODEL.seqs)
     MODEL.sim_snps(10)

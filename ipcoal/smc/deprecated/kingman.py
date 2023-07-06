@@ -2,7 +2,7 @@
 
 """Kingman n-coalescent probability functions.
 
-NOT YET IMPLEMENTED.
+DEPRECATED. The msc likelihood function can apply similarly to single pops.
 
 References
 ----------

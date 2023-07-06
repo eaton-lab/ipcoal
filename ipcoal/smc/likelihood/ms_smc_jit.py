@@ -524,18 +524,28 @@ if __name__ == "__main__":
 
     RECOMB = 2e-9
     SEED = 123
-    NEFF = 150_000
+    # NEFF = 150_000
     ROOT_HEIGHT = 1e6
     NSPECIES = 2
     NSAMPLES = 4
-    NSITES = 1e5
+    NSITES = 2e5
 
-    sptree = toytree.rtree.baltree(NSPECIES).mod.edges_scale_to_root_height(ROOT_HEIGHT, include_stem=True)
-
-    sptree.set_node_data("Ne", {0: 2e5, 1: 3e5, 2: 4e5}, inplace=True)
+    sptree = toytree.rtree.baltree(NSPECIES, treeheight=ROOT_HEIGHT)
+    sptree.set_node_data("Ne", {0: 2e5, 1: 2e5, 2: 2e5}, inplace=True)
     model = ipcoal.Model(sptree, nsamples=NSAMPLES, recomb=RECOMB, seed_trees=SEED)
     model.sim_trees(1, NSITES)
     imap = model.get_imap_dict()
+
+    genealogies = toytree.mtree(model.df.genealogy)
+    glens = model.df.nbps.values
+    G = TreeEmbedding(model.tree, genealogies, imap)
+    print(G.table, G.earr.shape)
+
+    values = np.linspace(10_000, 400_000, 31)
+    for val in values:
+        loglik = get_tree_distance_loglik(G, np.array([val, val, val]), 2e-9, glens)
+        print(f"{val:.2e} {loglik:.2f}")
+    raise SystemExit(0)
 
     # genealogy topo change interval lengths
     topo_lengths = ipcoal.smc.likelihood.get_topology_interval_lengths(model)
@@ -545,6 +555,9 @@ if __name__ == "__main__":
 
     # load all genealogies as Toytrees
     genealogies = toytree.mtree(model.df.genealogy)
+
+
+
 
     tdata = TopologyEmbedding(model.tree, genealogies, imap, nproc=4)
     tdata.table[tdata.table.gindex == 10]

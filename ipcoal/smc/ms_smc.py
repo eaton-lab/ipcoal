@@ -67,7 +67,7 @@ def get_genealogy_embedding_table(
     gt_node_heights = genealogy.get_node_data("height")
 
     # iterate over stree from tips to root storing stree node data
-    for st_node in species_tree.traverse("postorder"):
+    for st_node in species_tree:
         # get all gtree names descended from this sptree interval
         gt_tips = set.union(*[set(imap[i]) for i in st_node.get_leaf_names()])
 
@@ -75,7 +75,7 @@ def get_genealogy_embedding_table(
         gt_nodes = set(name_to_node[i] for i in gt_tips)
 
         # get internal nodes in this TIME interval (coalescences)
-        mask_below = gt_node_heights > st_node.height + 0.0001 # zero-align ipcoal bug
+        mask_below = gt_node_heights > st_node.height + 0.0001  # zero-align ipcoal bug
         mask_above = True if st_node.is_root() else gt_node_heights < st_node.up.height
         nodes_in_time_slice = gt_node_heights[mask_below & mask_above]
 
@@ -1133,33 +1133,35 @@ def plot_edge_probabilities(
 
 if __name__ == "__main__":
 
+    from ipcoal.smc.src.utils import get_test_data
     ipcoal.set_log_level("WARNING")
     pd.options.display.max_columns = 10
     pd.options.display.width = 1000
 
-    # Setup a species tree with edge lengths in generations
-    SPTREE = toytree.tree("(((A,B),C),D);")
-    SPTREE.set_node_data("height", inplace=True, default=0, data={
-        4: 200_000, 5: 400_000, 6: 600_000,
-    })
+    SPTREE, GTREE, IMAP = get_test_data()
+    # # Setup a species tree with edge lengths in generations
+    # SPTREE = toytree.tree("(((A,B),C),D);")
+    # SPTREE.set_node_data("height", inplace=True, default=0, data={
+    #     4: 200_000, 5: 400_000, 6: 600_000,
+    # })
 
-    # Set constant or variable Ne on species tree edges
-    SPTREE.set_node_data("Ne", inplace=True, default=100_000)
+    # # Set constant or variable Ne on species tree edges
+    # SPTREE.set_node_data("Ne", inplace=True, default=100_000)
 
-    # Setup a genealogy embedded in the species tree (see below to
-    # instead simulate one but here we just create it from newick.)
-    GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
-    GTREE.set_node_data("height", inplace=True, default=0, data={
-        7: 100_000, 8: 120_000, 9: 300_000, 10: 450_000, 11: 650_000, 12: 800_000,
-    })
+    # # Setup a genealogy embedded in the species tree (see below to
+    # # instead simulate one but here we just create it from newick.)
+    # GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
+    # GTREE.set_node_data("height", inplace=True, default=0, data={
+    #     7: 100_000, 8: 120_000, 9: 300_000, 10: 450_000, 11: 650_000, 12: 800_000,
+    # })
 
-    # Setup a map of species names to a list sample names
-    IMAP = {
-        "A": ['0', '1', '2'],
-        "B": ['3', '4'],
-        "C": ['5',],
-        "D": ['6',],
-    }
+    # # Setup a map of species names to a list sample names
+    # IMAP = {
+    #     "A": ['0', '1', '2'],
+    #     "B": ['3', '4'],
+    #     "C": ['5',],
+    #     "D": ['6',],
+    # }
 
     # Select a branch to plot and get its relations
     BIDX = 2
@@ -1181,10 +1183,10 @@ if __name__ == "__main__":
     p_topo = get_probability_topology_change(SPTREE, GTREE, IMAP)
     print(f"Probability of no-change\n{p_no:.3f}\n")
     print(f"Probability of tree-change\n{p_tree:.3f}\n")
-    print(f"Probability of topology-change\n{p_topo:.3f}\n")
+    print(f"Probability of topology-change\n{p_topo:.5f}\n")
 
-    CANVAS = plot_edge_probabilities(SPTREE, GTREE, IMAP, 2)
-    toytree.utils.show(CANVAS)
+    # CANVAS = plot_edge_probabilities(SPTREE, GTREE, IMAP, 2)
+    # toytree.utils.show(CANVAS)
 
     raise SystemExit(0)
 
