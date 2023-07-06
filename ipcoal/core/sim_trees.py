@@ -128,7 +128,11 @@ def _sim_trees(
             # get newick for this tree w/ original names
             nwk = tree.newick(node_labels=model.tipdict, precision=precision)
             # store all to a list
-            row = [lidx, int(ival.left), int(ival.right), int(ival.span), 0, index, nwk]
+            # row = [lidx, int(ival.left), int(ival.right), int(ival.span), 0, index, nwk]
+            if model.discrete_genome:
+                row = [lidx, int(ival.left), int(ival.right), int(ival.span), 0, index, nwk]
+            else:
+                row = [lidx, ival.left, ival.right, ival.span, 0, index, nwk]
             datalist.append(row)
 
         # store the tree_sequence
@@ -207,5 +211,6 @@ if __name__ == "__main__":
 
     TREE = toytree.rtree.unittree(ntips=6, treeheight=1e6)
     MODEL = ipcoal.Model(TREE, Ne=1e4, seed_trees=123)
-    sim_trees(MODEL, 10, 1e4)
+    # sim_trees(MODEL, 4000, 1e4, nproc=4)
+    MODEL.sim_trees(40, 1e4, nproc=1)
     print(MODEL.df)
