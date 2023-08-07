@@ -7,28 +7,19 @@
 from typing import Mapping, Sequence
 from toytree import ToyTree
 import toyplot
-import pandas as pd
 import numpy as np
 from ipcoal.msc import get_genealogy_embedding_table
-# from ipcoal.smc import get_prob_tree_unchanged_given_b_and_tr_from_table
-# from ipcoal.smc import get_prob_topo_unchanged_given_b_and_tr_from_table
-# get_waiting_distance_to_recomb_event_rv
-# get_waiting_distance_to_tree_change_event_rv
-# get_waiting_distance_to_topo_change_event_rv
+from ipcoal.smc.src.embedding import TreeEmbedding
+from ipcoal.smc.src.ms_smc_tree_prob import get_prob_tree_unchanged_given_b_and_tr_from_arrays
+from ipcoal.smc.src.ms_smc_topo_prob import get_prob_topo_unchanged_given_b_and_tr_from_arrays
+from ipcoal.smc.src.ms_smc_rvs import (
+    get_distribution_waiting_distance_to_recombination,
+    get_distribution_waiting_distance_to_tree_change,
+    get_distribution_waiting_distance_to_topo_change,
+)
 
 
-def get_genealogy_embedding_edge_path(table: pd.DataFrame, branch: int) -> pd.DataFrame:
-    """Return the gene tree embedding table intervals a gtree edge
-    passes through.
-
-    Parameters
-    ----------
-    table:
-        A table returned by the `get_genealogy_embedding_table` func.
-    branch:
-        An integer index (idx) label to select a genealogy branch.
-    """
-    return table[table.edges.apply(lambda x: branch in x)]
+__all__ = ["plot_edge_probabilities", "plot_waiting_distance_distributions"]
 
 
 def plot_edge_probabilities(
@@ -70,20 +61,23 @@ def plot_edge_probabilities(
     pidx = branch.up.idx
 
     # Get genealogy embedding table
-    etable = get_genealogy_embedding_table(species_tree, genealogy, imap)
-    btable = get_genealogy_embedding_edge_path(etable, bidx)
+    etable = get_genealogy_embedding_table(species_tree, genealogy, imap, encode=True)
+    btable = etable.loc[etable[bidx].astype(np.bool_)]
+
+    emb, enc, barr, sarr, rarr = TreeEmbedding(
+        species_tree, genealogy, imap, nproc=1).get_data()
 
     # Plot probabilities of change types over a single branch
     # Note these are 'unchange' probs and so we plot 1 - Prob here.
     times = np.linspace(branch.height, branch.up.height, 200, endpoint=False)
     pt_nochange_tree = [
-        get_probability_tree_unchanged_given_b_and_tr_from_table(
-            etable, bidx, itime
+        get_prob_tree_unchanged_given_b_and_tr_from_arrays(
+            emb[0], enc[0], bidx, itime,
         ) for itime in times
     ]
     pt_nochange_topo = [
-        get_probability_topology_unchanged_given_b_and_tr_from_table(
-            etable, bidx, sidx, pidx, itime
+        get_prob_topo_unchanged_given_b_and_tr_from_arrays(
+            emb[0], enc[0], bidx, sidx, pidx, itime,
         ) for itime in times
     ]
 
@@ -99,8 +93,8 @@ def plot_edge_probabilities(
     style = {"stroke": "black", "stroke-width": 2, "stroke-dasharray": "4,2"}
     intervals = [btable.start.iloc[0]] + list(btable.stop - 0.001)
     for itime in intervals:
-        iprob_tree = get_probability_tree_unchanged_given_b_and_tr_from_table(etable, bidx, itime)
-        iprob_topo = get_probability_topology_unchanged_given_b_and_tr_from_table(etable, bidx, sidx, pidx, itime)
+        iprob_tree = get_prob_tree_unchanged_given_b_and_tr_from_arrays(emb[0], enc[0], bidx, itime)
+        iprob_topo = get_prob_topo_unchanged_given_b_and_tr_from_arrays(emb[0], enc[0], bidx, sidx, pidx, itime)
         ax0.plot([itime, itime], [0, iprob_tree], style=style)
         ax1.plot([itime, itime], [0, 1 - iprob_tree], style=style)
         ax2.plot([itime, itime], [0, 1 - iprob_topo], style=style)
@@ -141,25 +135,40 @@ def plot_waiting_distance_distributions(
     axes.x.ticks.near = axes.y.ticks.near = 7.5
     axes.x.ticks.far = axes.y.ticks.far = 0
     axes.x.ticks.labels.offset = axes.y.ticks.labels.offset = 15
-    axes.x.label.text = "Distance to next event"
-    axes.y.label.text = "Probability"
+    axes.x.label.text = "Waiting distance to next event"
+    axes.y.label.text = "Probability of event type"
     axes.x.label.offset = axes.y.label.offset = 35
     axes.x.spine.style['stroke-width'] = axes.y.spine.style['stroke-width'] = 1.5
     axes.x.ticks.style['stroke-width'] = axes.y.ticks.style['stroke-width'] = 1.5
     axes.label.offset = 20
 
-    rv_recomb = get_waiting_distance_to_recombination_event_rv(genealogy, recombination_rate)
-    rv_tree = get_waiting_distance_to_tree_change_rv(species_tree, genealogy, imap, recombination_rate)
-    rv_topo = get_waiting_distance_to_topology_change_rv(species_tree, genealogy, imap, recombination_rate)
+    rv_recomb = get_distribution_waiting_distance_to_recombination(genealogy, recombination_rate)
+    rv_tree = get_distribution_waiting_distance_to_tree_change(species_tree, genealogy, imap, recombination_rate)
+    rv_topo = get_distribution_waiting_distance_to_topo_change(species_tree, genealogy, imap, recombination_rate)
 
+    marks = []
     for dist in [rv_recomb, rv_tree, rv_topo]:
         xs_ = np.linspace(dist.ppf(0.025), dist.ppf(0.975), 100)
         ys_ = dist.pdf(xs_)
-        axes.plot(xs_, ys_, stroke_width=4)
+        marks.append(axes.plot(xs_, ys_, stroke_width=4))
         axes.fill(xs_, ys_, opacity=1 / 3)
+
+    canvas.legend(
+        entries=[
+            ('no-change', marks[0]),
+            ('tree-change', marks[1]),
+            ('topo-change', marks[2]),
+        ],
+        bounds=("50%", "75%", "15%", "45%"),
+    )
     return canvas
 
 
 if __name__ == "__main__":
 
-    pass
+    import toytree
+    from ipcoal.msc import get_test_data
+    SPTREE, GTREE, IMAP = get_test_data()
+    c0 = plot_edge_probabilities(SPTREE, GTREE, IMAP, branch=2)
+    c1 = plot_waiting_distance_distributions(SPTREE, GTREE, IMAP, recombination_rate=2e-9)
+    toytree.utils.show([c0, c1])

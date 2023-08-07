@@ -12,6 +12,18 @@ import ipcoal
 logger = logger.bind(name="ipcoal")
 
 
+def get_test_data():
+    """Return (SPTREE, GTREE, IMAP) for manuscript example in Figs. S6-7
+    """
+    SPTREE = toytree.tree("((A,B),C);")
+    SPTREE.set_node_data("height", inplace=True, default=0, data={3: 1000, 4: 3000})
+    SPTREE.set_node_data("Ne", default=1e3, inplace=True)
+    GTREE = toytree.tree("((0,(1,2)),3);")
+    GTREE.set_node_data("height", inplace=True, default=0, data={4: 2000, 5: 4000, 6: 5000})
+    IMAP = {"A": ['0'], "B": ['1', '2'], "C": ['3']}
+    return SPTREE, GTREE, IMAP
+
+
 def iter_spans_and_trees_from_model(
     model: ipcoal.Model,
     locus: Optional[int] = None,

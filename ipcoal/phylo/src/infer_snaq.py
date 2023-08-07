@@ -283,6 +283,7 @@ def infer_snaq_network(
 
     # write trees input as a newline separated file to tmpdir
     tmpdir = Path(tmpdir)
+    # TODO: Make above exit if not.
     with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"-{os.getpid()}") as tmpfile:
         fname = Path(tmpfile.name)
 

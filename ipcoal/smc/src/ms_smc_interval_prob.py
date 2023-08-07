@@ -22,6 +22,131 @@ logger = logger.bind(name="ipcoal")
 
 
 @njit
+def _get_fij_set_sum(emb: np.ndarray, idxs: np.ndarray, jdxs: np.ndarray) -> float:
+    """Return summation of f(i,j) function over a set of intervals.
+
+    Given an embedding table the idxs array indicates which intervals
+    are associated with the branch on which recombination occurred,
+    and the jdxs array indicates the intervals over which we are
+    calculating its re-coalescence.
+
+    Parameters
+    ----------
+    emb: ndarray
+        A genealogy embedding table
+    idxs: ndarray
+        Array of intervals as ordered ints for the path from the
+        recombination event interval to the parent of the branch.
+    jdxs: ndarray
+        Array of intervals as ordered ints on which re-coalescence is
+        being calculated.
+    """
+    sumfij = 0
+    idx = idxs[0]
+    for jdx in jdxs:
+
+        if jdx == idx:
+            term1 = -(1 / emb[idx, 4])
+            term2 = np.exp(-(emb[idx, 4] / (2 * emb[idx, 3])) * emb[idx, 1])
+            fij = term1 * term2
+
+        elif jdx < idx:
+            fij = 0
+
+        else:
+            term1 = 1 / emb[jdx, 4]
+            term2 = (1 - np.exp(-(emb[jdx, 4] / (2 * emb[jdx, 3])) * emb[jdx, 5]))
+
+            # involves connections to idx interval
+            term3_inner_a = -(emb[idx, 4] / (2 * emb[idx, 3])) * emb[idx, 1]
+
+            # involves connections to edges BETWEEN idx and jdx (not including idx or jdx)
+            term3_inner_b = 0
+            for qdx in idxs[1:]:
+                if qdx == jdx:
+                    break
+                term3_inner_b += (emb[qdx, 4] / (2 * emb[qdx, 3])) * emb[qdx, 5]
+            term3 = np.exp(term3_inner_a - term3_inner_b)
+            fij = term1 * term2 * term3
+
+        # sum fij across intervals
+        sumfij += fij
+        # print(f"* idx={idx}, jdx={jdx}, fij={fij:.4f}, sum(fij)={sumfij:.4f}")
+    return sumfij
+
+
+@njit
+def _get_pb1_set_sum(emb: np.ndarray, bidxs: np.ndarray, midxs: np.ndarray, fidxs: np.ndarray):
+    """
+
+    """
+    pbval = 0
+
+    # get idxs on branch b below t_m
+    lidxs = bidxs[bidxs < midxs.min()]
+
+    # iterate over intervals on branch b
+    for idx in lidxs:
+
+        # get first term
+        neff2 = (2 * emb[idx, 3])
+        nedges = emb[idx, 4]
+        estop = (nedges / neff2) * emb[idx, 1]
+        estart = (nedges / neff2) * emb[idx, 0]
+        if estop > 100:
+            term1 = 1e15
+        else:
+            term1 = neff2 * (np.exp(estop) - np.exp(estart))
+
+        # for fidxs at and above idx
+        term2a = _get_fij_set_sum(emb, fidxs[fidxs >= idx], fidxs)
+        term2b = _get_fij_set_sum(emb, fidxs[fidxs >= idx], midxs)
+
+        # ...
+        inner = emb[idx, 5] + (term1 * (term2a + term2b))
+
+        # ...
+        pbval += (1 / nedges) * inner
+    return pbval
+
+
+@njit
+def _get_pb2_set_sum(emb: np.ndarray, bidxs: np.ndarray, midxs: np.ndarray, fidxs: np.ndarray):
+    """
+
+    """
+    pbval = 0
+
+    # get idxs on branch b above t_m
+    pidxs = fidxs[fidxs > bidxs.max()]
+
+    # iterate over intervals on branch b
+    for idx in midxs:
+
+        # get first term
+        neff2 = 2 * emb[idx, 3]
+        estop = (emb[idx, 4] / neff2) * emb[idx, 1]
+        estart = (emb[idx, 4] / neff2) * emb[idx, 0]
+        if estop > 100:
+            term1 = 1e15
+        else:
+            term1 = neff2 * (np.exp(estop) - np.exp(estart))
+
+        # for fidxs at and above idx
+        term2a = _get_fij_set_sum(emb, fidxs[fidxs >= idx], bidxs)
+        term2b = _get_fij_set_sum(emb, fidxs[fidxs >= idx], pidxs)
+
+        # ...
+        inner = (2 * emb[idx, 5]) + (term1 * (2 * term2a + term2b))
+
+        # ...
+        pbval += (1 / emb[idx, 4]) * inner
+    return pbval
+
+
+# OLDER and SLOWER CODE
+
+@njit
 def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
     """Return pij value for two intervals.
 
@@ -38,6 +163,8 @@ def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
     table that is entered needs to be specifically constructed. See
     `get_probability_topology_unchanged_given_b_and_tr` for examples.
 
+    - This assumes the Ne column is 2 * diploid Ne.
+
     Parameters
     ----------
     table
@@ -51,7 +178,7 @@ def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
     # pii
     if idx == jdx:
         term1 = -(1 / itab[idx, 4])
-        term2 = np.exp(-(itab[idx, 4] / itab[idx, 3]) * itab[idx, 1])
+        term2 = np.exp(-(itab[idx, 4] / (itab[idx, 3])) * itab[idx, 1])
         return term1 * term2
 
     # ignore jdx < idx (speed hack so we don't need to trim tables below t_r)
@@ -60,7 +187,7 @@ def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
 
     # involves connections to jdx interval
     term1 = 1 / itab[jdx, 4]
-    term2 = (1 - np.exp(-(itab[jdx, 4] / itab[jdx, 3]) * itab[jdx, 5]))
+    term2 = (1 - np.exp(-(itab[jdx, 4] / (itab[jdx, 3])) * itab[jdx, 5]))
 
     # involves connections to idx interval
     term3_inner_a = -(itab[idx, 4] / (itab[idx, 3])) * itab[idx, 1]
@@ -68,7 +195,7 @@ def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
     # involves connections to edges BETWEEN idx and jdx (not including idx or jdx)
     term3_inner_b = 0
     for qdx in range(idx + 1, jdx):
-        term3_inner_b += ((itab[qdx, 4] / itab[qdx, 3]) * itab[qdx, 5])
+        term3_inner_b += ((itab[qdx, 4] / (itab[qdx, 3])) * itab[qdx, 5])
     term3 = np.exp(term3_inner_a - term3_inner_b)
     return term1 * term2 * term3
 
@@ -178,14 +305,83 @@ if __name__ == "__main__":
 
     import toytree
     import ipcoal
-    from ipcoal.smc.src.embedding import TreeEmbedding, TopologyEmbedding
+    from ipcoal.smc.src.utils import get_test_data
+    from ipcoal.msc import get_genealogy_embedding_table
 
-    # generate data
-    sptree = toytree.rtree.imbtree(4, treeheight=1e6)
-    model = ipcoal.Model(sptree, Ne=1e5, nsamples=2)
-    model.sim_trees(100)
-    imap = model.get_imap_dict()
+    ###################################################################
+    # test from Fig. S7 in paper
+    SPTREE, GTREE, IMAP = get_test_data()
+    TIME = 500
+    BIDX = 0
+    SIDX = 4
+    PIDX = 5
 
-    # get embeddings
-    table = TreeEmbedding(model.tree, model.df.genealogy, imap)
-    print(table.table)
+    # show embedding table as df
+    print(get_genealogy_embedding_table(SPTREE, GTREE, IMAP))
+
+    # get arrays
+    gemb, genc = ipcoal.msc.get_genealogy_embedding_arrays(SPTREE, GTREE, IMAP)
+    gemb = gemb[0]
+    genc = genc[0]
+
+    # multiply Ne x 2
+    gemb[:, 3] *= 2
+
+    # get all intervals on branch b if end is including or above time t_r
+    benc = genc[:, BIDX] & (gemb[:, 0] >= TIME)
+    bidxs = benc.nonzero()[0]
+
+    # get intervals containing both b and sister above time tr
+    senc = genc[:, SIDX]
+    sidxs = (benc & senc).nonzero()[0]
+
+    # get intervals containing parent
+    penc = genc[:, PIDX]
+    pidxs = penc.nonzero()[0]
+
+    # get intervals containing either b or its parent
+    fidxs = (benc | penc).nonzero()[0]
+
+    # get interval in which recomb event occurs
+    idx = bidxs.min()
+
+    # exp(nedges / 2neff) * tr)
+    inner = (gemb[idx, 4] / gemb[idx, 3]) * TIME
+    inner = np.exp(inner) if inner < 100 else 1e15
+
+    benc = genc[:, 0] #& (TIME < gemb[:, 1])
+    bidxs = benc.nonzero()[0]
+    btab = gemb[bidxs]
+
+    # get intervals on branches b or c (0 and 5)
+    fenc = genc[:, 0] | genc[:, 5]
+    fidxs = fenc.nonzero()[0]
+    ftab = gemb[fidxs]
+    print(fidxs)
+
+    # get intervals shared by branches b and b' (0 and 4)
+    menc = genc[:, 0] & genc[:, 4]
+    midxs = menc.nonzero()[0]
+    mtab = gemb[midxs]
+    print(midxs)
+
+    lidxs = bidxs[bidxs < midxs.min()]
+
+    # interval where recomb occurs
+    idx = 0
+
+    # get fij over I_bc
+    val = 0
+    for jdx in range(ftab.shape[0]):
+        fij = _get_fast_pij(ftab, idx, jdx)
+        print(f'f{idx},{jdx}', fij)
+        val += fij
+    print(val)
+
+    print(_get_fij_set_sum(gemb, bidxs, fidxs))
+
+    print(_get_fast_sum_pb1(btab, ftab, mtab))
+    print(_get_pb1_set_sum(gemb, bidxs, midxs, fidxs))
+
+    print(_get_fast_sum_pb2(btab, ftab, mtab))
+    print(_get_pb2_set_sum(gemb, bidxs, midxs, fidxs))

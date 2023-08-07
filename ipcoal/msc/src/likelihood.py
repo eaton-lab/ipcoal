@@ -24,8 +24,7 @@ logger = logger.bind(name="ipcoal")
 
 __all__ = [
     "get_msc_loglik",
-    "_get_msc_loglik_from_embedding_array",
-    "_get_msc_loglik_from_embedding",
+    "get_msc_loglik_from_embedding",
 ]
 
 
@@ -55,28 +54,13 @@ def get_msc_loglik(
         gene_trees = toytree.mtree(gene_trees).treelist
 
     emb, _ = get_genealogy_embedding_arrays(species_tree, gene_trees, imap)
-    loglik = _get_msc_loglik_from_embedding_array(emb)
+    loglik = get_msc_loglik_from_embedding(emb)
     return loglik
 
 
 @njit(parallel=True)
-def _get_msc_loglik_from_embedding_array(embedding: np.ndarray) -> float:
+def get_msc_loglik_from_embedding(embedding: np.ndarray) -> float:
     """Return sum -loglik of genealogies embedded in a species tree.
-
-    This function assumes the normal format in which the third column
-    contains diploid Ne values.
-
-    Parameters
-    ----------
-    embedding: np.ndarray
-        A genealogy embedding array from the first returned object of
-        `ipcoal.smc.get_genealogy_embedding_arrays()`.
-
-    Examples
-    --------
-    >>> args = (sptree, gtrees, imap)
-    >>> emb, _ = ipcoal.msc.get_genealogy_embedding_array(*args)
-    >>> loglik = _get_msc_loglik_from_embedding_array(emb)
     """
     ntrees = embedding.shape[0]
     nspecies = int(embedding[0, -1, 2])
@@ -92,59 +76,7 @@ def _get_msc_loglik_from_embedding_array(embedding: np.ndarray) -> float:
 
             # get coal rate in this interval
             iarr = garr[garr[:, 2] == sval]
-            rate = 1 / (2 * iarr[0, 3])
-
-            # prob of all events in this sptree interval
-            prob = 1.
-            # get prob of each coal event in this sptree interval
-            for ridx in range(iarr.shape[0] - 1):
-                nedges = iarr[ridx, 4]
-                npairs = (nedges * (nedges - 1)) / 2
-                lambda_ = rate * npairs
-                dist = iarr[ridx, 5]
-                # prob *= (1 / npairs) * lambda_ * np.exp(-lambda_ * dist)
-                prob *= rate * np.exp(-lambda_ * dist)
-
-            # get prob no coal in remaining time of interval
-            nedges = iarr[-1, 4]
-            npairs = (nedges * (nedges - 1)) / 2
-            lambda_ = rate * npairs
-            dist = iarr[-1, 5]
-            if not np.isinf(dist):
-                prob *= np.exp(-lambda_ * dist)
-
-            # store as loglik
-            if prob > 0:
-                loglik += np.log(prob)
-            else:
-                loglik += np.inf
-        logliks[gidx] = loglik
-    return -logliks.sum()
-
-
-@njit(parallel=True)
-def _get_msc_loglik_from_embedding(embedding: np.ndarray) -> float:
-    """Return sum -loglik of genealogies embedded in a species tree.
-
-    This function assumes the array is from a TreeEmbedding object
-    in which **the third column contains 2 * diploid Ne values.**
-    This is used in fast likelihood calculations. Not for users.
-    """
-    ntrees = embedding.shape[0]
-    nspecies = int(embedding[0, -1, 2])
-    logliks = np.zeros(ntrees, dtype=np.float64)
-
-    # iterate over gtrees
-    for gidx in prange(ntrees):
-        garr = embedding[gidx]
-
-        # iterate over species tree intervals
-        loglik = 0.
-        for sval in range(nspecies + 1):
-
-            # get coal rate in this interval
-            iarr = garr[garr[:, 2] == sval]
-            rate = 1 / iarr[0, 3]  # ----------------- assume 2Ne in table
+            rate = 1 / (2 * iarr[0, 3])  # 2 * diploid Ne
 
             # prob of all events in this sptree interval
             prob = 1.
@@ -193,7 +125,7 @@ def test_kingman(neff: float = 1e5, nsamples: int = 10, ntrees: int = 500):
     logliks = []
     for val in test_values:
         emb[:, :, 3] = val
-        loglik = _get_msc_loglik_from_embedding_array(emb)
+        loglik = get_msc_loglik_from_embedding(emb)
         logliks.append(loglik)
 
     canvas, axes, mark = toyplot.plot(
@@ -232,8 +164,8 @@ def test_msc(neff: float = 1e5, nsamples: int = 4, nloci: int = 500, nsites: int
     test_values = np.logspace(np.log10(neff) - 1, np.log10(neff) + 1, 21)
     logliks = []
     for val in test_values:
-        emb[:, :, 3] = val * 2.
-        loglik = _get_msc_loglik_from_embedding(emb)
+        emb[:, :, 3] = val
+        loglik = get_msc_loglik_from_embedding(emb)
         logliks.append(loglik)
         logger.warning(f"fit value={val:.0f}: {loglik:.5e}")
 
@@ -250,9 +182,9 @@ if __name__ == "__main__":
 
     import ipcoal
     ipcoal.set_log_level("INFO")
-    # test_kingman(neff=1e6, nsamples=10, ntrees=500)
+    test_kingman(neff=1e6, nsamples=10, ntrees=500)
     # test_msc(neff=1e6, nsamples=5, nloci=5000, nsites=1)
-    test_msc(neff=1e6, nsamples=5, nloci=10, nsites=1e5)
+    # test_msc(neff=1e6, nsamples=5, nloci=10, nsites=1e5)
 
     # SPTREE = toytree.rtree.baltree(2, treeheight=1e6)
     # MODEL = ipcoal.Model(SPTREE, Ne=200_000, nsamples=4, seed_trees=123)

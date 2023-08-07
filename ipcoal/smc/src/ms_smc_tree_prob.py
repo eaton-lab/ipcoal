@@ -14,22 +14,22 @@ Note: Ne in TreeEmbedding emb arrays are stored as 2 * diploid Ne.
 import numpy as np
 from loguru import logger
 from numba import njit, prange
-from ipcoal.smc.src.ms_smc_interval_prob import _get_fast_pij
+from ipcoal.smc.src.ms_smc_interval_prob import _get_fij_set_sum
+
 
 logger = logger.bind(name="ipcoal")
 
-# __all__ = [
-#     "get_tree_change_probability",
-#     "get_tree_change_probability_given_b",
-#     "get_tree_change_probability_given_b_and_t",
-#     "get_tree_change_waiting_distance",
-#     "get_tree_change_rate",
-#     "get_tree_change_rvs",
-# ]
+__all__ = [
+    "get_prob_tree_unchanged_given_b_and_tr_from_arrays",
+    "get_prob_tree_unchanged_given_b_from_arrays",
+    "get_prob_tree_unchanged_from_arrays",
+    "get_tree_unchanged_lambdas",
+    "get_tree_changed_lambdas",
+]
 
 
 @njit
-def get_fast_prob_tree_unchanged_given_b_and_tr(
+def get_prob_tree_unchanged_given_b_and_tr_from_arrays(
     gemb: np.ndarray,
     genc: np.ndarray,
     bidx: int,
@@ -39,48 +39,48 @@ def get_fast_prob_tree_unchanged_given_b_and_tr(
 
     This function is mainly for didactic purposes.
 
-    Note: this function assumes garr[:, 3] is (2 * diploid Ne), which
-    is how Ne is stored in the TreeEmbedding array. When using this
-    function with a normal table from `get_genealogy_embedding_table()`
-    the garr[:, 3] is (1 * diploid Ne) and should be multiplied by 2.
-    This is automatically done in the functions in `ipcoal.smc` that
-    do not have `_fast_` in their names.
-
     Parameters
     ----------
-    garr: np.ndarray
-        A genealogy embedding table for a single genealogy.
+    gemb: np.ndarray
+        A genealogy embedding from get_genealogy_embedding_arrays().
+    genc: np.narray
+        A branch encoding array from get_genealogy_embedding_arrays().
     bidx: int
         Index of a genealogy branch on which recombination occurs.
+    time: float
+        A time at which recombination occurs on branch index bidx.
     """
     # subselect array intervals for this genealogy branch
-    idxs = np.nonzero(genc[:, bidx])[0]
-    arr = gemb[idxs, :]
+    bmask = genc[:, bidx]
 
-    # get interval containing time tr
-    tidx = np.nonzero((arr[:, 0] <= time) & (arr[:, 1] >= time))[0]
-    if not tidx.size:
-        raise ValueError(f"No interval exists on branch {bidx} at time {time}.")
-    tidx = tidx[0]
+    # subselect array intervals by time of recombination
+    in_or_above_t = time < gemb[:, 1]  # tr occurs before interval end
 
-    # (nedges / neff) * time
-    inner = (arr[tidx, 4] / arr[tidx, 3]) * time
+    # get intervals on b above or include time tr
+    bidxs = (bmask & in_or_above_t).nonzero()[0]
+
+    # assert intervals must exist on b at tr
+    if not bidxs.size:
+        raise ValueError("No interval exists on branch bidx at time tr.")
+    tidx = bidxs.min()
+
+    # (nedges / 2neff) * time
+    inner = (gemb[tidx, 4] / (2 * gemb[tidx, 3])) * time
     inner = np.exp(inner) if inner < 100 else 1e15
 
-    # (1 / nedges) + pij * inner
-    term1 = (1 / arr[tidx, 4]) + _get_fast_pij(arr, tidx, tidx) * inner
+    # (1 / nedges)
+    term1 = (1 / gemb[tidx, 4])
 
-    # iterate over all intervals from idx to end of b and get pij
-    term2 = 0
-    for jdx in range(tidx + 1, arr.shape[0]):
-        term2 += _get_fast_pij(arr, tidx, jdx) * inner
+    # pij * inner for all intervals on branch above or including tr
+    term2 = _get_fij_set_sum(gemb, bidxs, bidxs) * inner
     return term1 + term2
+
 
 #####################################################################
 
 
 @njit
-def get_fast_prob_tree_unchanged_given_b(
+def get_prob_tree_unchanged_given_b_from_arrays(
     gemb: np.ndarray,
     genc: np.ndarray,
     bidx: int,
@@ -92,28 +92,34 @@ def get_fast_prob_tree_unchanged_given_b(
     gemb: np.ndarray
         A genealogy embedding table for a single genealogy.
     genc: np.ndarray
-        A Node encoding table for a single genealogy.
+        A branch encoding table for a single genealogy.
     bidx: int
         Index of a genealogy branch on which recombination occurs.
+    ne_is_2Ne: bool
+        (Users can ignore this.) Set to True if you modify the Ne
+        values in the embedding array to be 2 * Ne instead of Ne.
     """
     # subselect array intervals for this genealogy branch
-    idxs = np.nonzero(genc[:, bidx])[0]
-    arr = gemb[idxs, :]
+    bmask = genc[:, bidx]
+    bidxs = np.nonzero(bmask)[0]
 
     # get top and bottom times on branch b
-    tbl = arr[:, 0].min()
-    tbu = arr[:, 1].max()
+    tbl = gemb[bmask, 0].min()
+    tbu = gemb[bmask, 1].max()
 
     # sum over the intervals on b where recomb could occur
     sumval = 0
-    for idx in range(arr.shape[0]):
-        term1 = (1 / arr[idx, 4]) * arr[idx, 5]
-        term2_outer = arr[idx, 3] / arr[idx, 4]
+    for idx in bidxs:
+        neff2 = 2 * gemb[idx, 3]
+        nedges = gemb[idx, 4]
+        dist = gemb[idx, 5]
+        term1 = (1 / nedges) * dist
+        term2_outer = neff2 / nedges
 
         # Avoid overflow when inner value here is too large. Simply
         # setting it to a very large value seems asymptotically OK.
-        estop = (arr[idx, 4] / arr[idx, 3]) * arr[idx, 1]
-        estart = (arr[idx, 4] / arr[idx, 3]) * arr[idx, 0]
+        estop = (nedges / neff2) * gemb[idx, 1]
+        estart = (nedges / neff2) * gemb[idx, 0]
         if estop > 100:
             term2_inner = 1e15
             # logger.warning("overflow")  # no-jit
@@ -121,34 +127,17 @@ def get_fast_prob_tree_unchanged_given_b(
             term2_inner = np.exp(estop) - np.exp(estart)
 
         # pij component
-        term3 = 0
-        for jdx in range(idx, arr.shape[0]):
-            term3 += _get_fast_pij(arr, idx, jdx)
+        jidxs = bidxs[bidxs >= idx]
+        term3 = _get_fij_set_sum(gemb, jidxs, jidxs)
         sumval += term1 + (term2_inner * term2_outer * term3)
     return (1 / (tbu - tbl)) * sumval
 
-
-def get_fast_prob_tree_changed_given_b(
-    gemb: np.ndarray,
-    genc: np.ndarray,
-    bidx: int,
-) -> float:
-    """Return prob tree-changed given recomb on branch b.
-
-    Parameters
-    ----------
-    garr: np.ndarray
-        A genealogy embedding table for a single genealogy.
-    bidx: int
-        Index of a genealogy branch on which recombination occurs.
-    """
-    return 1 - get_fast_prob_tree_unchanged_given_b(gemb, genc, bidx)
 
 #####################################################################
 
 
 @njit
-def get_fast_prob_tree_unchanged(
+def get_prob_tree_unchanged_from_arrays(
     gemb: np.ndarray,
     genc: np.ndarray,
     barr: np.ndarray,
@@ -162,15 +151,12 @@ def get_fast_prob_tree_unchanged(
     opposite of a no-change event, and includes any change to
     coalescent times (whether or not it changes the topology).
 
-    This is used within `get_fast_waiting_distance_to_tree_change_rates`
-
-    This probability is 1 - P(no-change | S,G), where S is the
-    species tree and G is the genealogy.
-
     Parameters
     ----------
-    garr: np.ndarray
+    gemb: np.ndarray
         A genealogy embedding table for a single genealogy.
+    genc: np.ndarray
+        A branch encoding table for a single genealogy.
     barr: np.ndarray
         Branch lengths for each branch on the genealogy.
     sumlen: int
@@ -180,17 +166,17 @@ def get_fast_prob_tree_unchanged(
     total_prob = 0
     for bidx, blen in enumerate(barr):
         # get P(tree-unchanged | S, G, b)
-        prob = get_fast_prob_tree_unchanged_given_b(gemb, genc, bidx=bidx)
+        prob = get_prob_tree_unchanged_given_b_from_arrays(gemb, genc, bidx=bidx)
         # contribute to total probability normalized by prop edge len
         total_prob += (blen / sumlen) * prob
     return total_prob
 
 
 @njit
-def get_fast_prob_tree_changed(
+def get_prob_tree_changed_from_arrays(
     gemb: np.ndarray,
     genc: np.ndarray,
-    barr: np.array,
+    barr: np.ndarray,
     sumlen: float,
 ) -> float:
     """Return probability recombination causes a tree-change.
@@ -204,20 +190,22 @@ def get_fast_prob_tree_changed(
 
     Parameters
     ----------
-    garr: np.ndarray
+    gemb: np.ndarray
         A genealogy embedding table for a single genealogy.
-    barr:
-        Array of branch lengths for each branch on the genealogy.
-    sumlen:
-        Sum branch lengths of the genealogy.
+    genc: np.ndarray
+        A branch encoding table for a single genealogy.
+    barr: np.ndarray
+        Branch lengths for each branch on the genealogy.
+    sumlen: int
+        Sum of branch lengths on the genealogy.
     """
-    return 1 - get_fast_prob_tree_unchanged(gemb, genc, barr, sumlen)
+    return 1 - get_prob_tree_unchanged_from_arrays(gemb, genc, barr, sumlen)
 
 #####################################################################
 
 
 @njit(parallel=True)
-def get_fast_tree_changed_lambdas(
+def get_tree_unchanged_lambdas(
     emb: np.ndarray,
     enc: np.ndarray,
     barr: np.ndarray,
@@ -227,21 +215,22 @@ def get_fast_tree_changed_lambdas(
 ) -> np.ndarray:
     """Return LAMBDA rate parameters for waiting distance prob. density.
 
-    Note: earr stores neff as 2Ne. No NaN allowed in earr. The arrays
-    used as input here come from a TreeEmbedding or TopologyEmbedding
-    object.
-
     Parameters
     ----------
-    earr: np.ndarray
-        Embedding array of (ngenealogies * nintervals, 7 + nnodes)
-        containing one or more genealogy embedding arrays each with
-        a unique genealogy index (gidx) in column 6.
+    emb: np.ndarray
+        Genealogy embedding array for multiple genealogies of shape
+        (ngenealogies, nintervals, 6) with a unique genealogy index
+        (gidx) in column 6.
+    enc: np.ndarray
+        Branch encoding array for multiple genealogies of shape
+        (ngenealogies, nintervals, nnodes - 1).
     barr: np.ndarray
-        Array of shape (ngenealogies, nnodes - 1) containing branch
-        lengths for each branch on each genealogy.
+        Branch length array for multiple genealogies of shape
+        (ngenealogies, nnodes - 1)
     sarr: np.ndarray
         Array of (ngenealogies,) w/ sum branch lengths of each tree.
+    rarr: np.ndarray or None
+        Placeholder here. Not used.
     recombination_rate: float
         The per-site per-generation recombination rate.
     """
@@ -255,14 +244,14 @@ def get_fast_tree_changed_lambdas(
         blens = barr[gidx]
         sumlen = sarr[gidx]
         # probability is a float in [0-1]
-        prob_tree = get_fast_prob_tree_changed(gemb, genc, blens, sumlen)
+        prob_tree = get_prob_tree_unchanged_from_arrays(gemb, genc, blens, sumlen)
         # lambda is a rate > 0
         lambdas[gidx] = sumlen * prob_tree * recombination_rate
     return lambdas
 
 
 @njit(parallel=True)
-def get_fast_tree_unchanged_lambdas(
+def get_tree_changed_lambdas(
     emb: np.ndarray,
     enc: np.ndarray,
     barr: np.ndarray,
@@ -272,21 +261,22 @@ def get_fast_tree_unchanged_lambdas(
 ) -> np.ndarray:
     """Return LAMBDA rate parameters for waiting distance prob. density.
 
-    Note: earr stores neff as 2Ne. No NaN allowed in earr. The arrays
-    used as input here come from a TreeEmbedding or TopologyEmbedding
-    object.
-
     Parameters
     ----------
-    earr: np.ndarray
-        Embedding array of (ngenealogies * nintervals, 7 + nnodes)
-        containing one or more genealogy embedding arrays each with
-        a unique genealogy index (gidx) in column 6.
+    emb: np.ndarray
+        Genealogy embedding array for multiple genealogies of shape
+        (ngenealogies, nintervals, 6) with a unique genealogy index
+        (gidx) in column 6.
+    enc: np.ndarray
+        Branch encoding array for multiple genealogies of shape
+        (ngenealogies, nintervals, nnodes - 1).
     barr: np.ndarray
-        Array of shape (ngenealogies, nnodes - 1) containing branch
-        lengths for each branch on each genealogy.
+        Branch length array for multiple genealogies of shape
+        (ngenealogies, nnodes - 1)
     sarr: np.ndarray
         Array of (ngenealogies,) w/ sum branch lengths of each tree.
+    rarr: np.ndarray or None
+        Placeholder here. Not used.
     recombination_rate: float
         The per-site per-generation recombination rate.
     """
@@ -300,7 +290,7 @@ def get_fast_tree_unchanged_lambdas(
         blens = barr[gidx]
         sumlen = sarr[gidx]
         # probability is a float in [0-1]
-        prob_tree = get_fast_prob_tree_unchanged(gemb, genc, blens, sumlen)
+        prob_tree = get_prob_tree_changed_from_arrays(gemb, genc, blens, sumlen)
         # lambda is a rate > 0
         lambdas[gidx] = sumlen * prob_tree * recombination_rate
     return lambdas
@@ -312,45 +302,90 @@ if __name__ == "__main__":
 
     import ipcoal
     import pandas as pd
+    import toytree
     from ipcoal.smc.src.embedding import TreeEmbedding
-    from ipcoal.smc.src.utils import get_test_data
 
     ipcoal.set_log_level("WARNING")
     pd.options.display.max_columns = 14
     pd.options.display.width = 1000
 
-    # SPTREE, GTREE, IMAP = get_test_data()
+    ##################################################################
+    # example
+    from ipcoal.msc.src.utils import get_test_data
+    SPTREE, GTREE, IMAP = get_test_data()
+    BRANCH = 8
+    TIME = 150_000
 
-    # # Select a branch to plot and get its relations
-    # BIDX = 2
-    # BRANCH = GTREE[BIDX]
-    # SIDX = BRANCH.get_sisters()[0].idx
-    # PIDX = BRANCH.up.idx
+    # get all embedding data
+    emb, enc, barr, sarr, rarr = TreeEmbedding(SPTREE, GTREE, IMAP).get_data()
 
-    # # Get genealogy embedding table
-    # ETABLE = ipcoal.msc.get_genealogy_embedding_table(SPTREE, GTREE, IMAP, encode=False)
-    # print(f"Full genealogy embedding table\n{ETABLE}\n")
+    p = get_prob_tree_unchanged_given_b_and_tr_from_arrays(emb[0], enc[0], bidx=BRANCH, time=TIME)
+    print(f"Figure S6 Prob(tree-unchanged | S, G, b, tr) = {p:.4f}\n")
 
-    SPTREE, GTREE, IMAP = get_test_data(1, 1000)
-    E = TreeEmbedding(SPTREE, GTREE, IMAP)
+    p = get_prob_tree_unchanged_given_b_from_arrays(emb[0], enc[0], bidx=BRANCH)
+    print(f"Figure S6 Prob(tree-unchanged | S, G, b) = {p:.4f}\n")
+
+    p = get_prob_tree_unchanged_from_arrays(emb[0], enc[0], barr[0], sarr[0])
+    print(f"Figure S6 Prob(tree-unchanged | S, G) = {p:.4f}\n")
+
+    ###################################################################
+    # test from Fig. S6 in paper
+    from ipcoal.smc.src.utils import get_test_data
+    SPTREE, GTREE, IMAP = get_test_data()
+    BRANCH = 0
+    TIME = 500
+
+    # get all embedding data
+    emb, enc, barr, sarr, rarr = TreeEmbedding(SPTREE, GTREE, IMAP).get_data()
+    # emb, enc = get_genealogy_embedding_arrays(SPTREE, GTREE, IMAP)
+
+    p = get_prob_tree_unchanged_given_b_and_tr_from_arrays(emb[0], enc[0], bidx=BRANCH, time=TIME)
+    print(f"Figure S6 Prob(tree-unchanged | S, G, b, tr) = {p:.4f}\n")
+
+    p = get_prob_tree_unchanged_given_b_from_arrays(emb[0], enc[0], bidx=BRANCH)
+    print(f"Figure S6 Prob(tree-unchanged | S, G, b) = {p:.4f}\n")
+
+    p = get_prob_tree_unchanged_from_arrays(emb[0], enc[0], barr[0], sarr[0])
+    print(f"Figure S6 Prob(tree-unchanged | S, G) = {p:.4f}\n")
+
+    raise SystemExit(0)
+
+    ###################################################################
+
+    ###################################################################
+    # Get genealogy embedding table
+    SPTREE, GTREE, IMAP = get_test_data()
+    get_probability_tree_unchanged_given_b()
+
+    ## ...
+
+
+    ETABLE = ipcoal.msc.get_genealogy_embedding_table(SPTREE, GTREE, IMAP, encode=False)
+    EMB, ENC = ipcoal.msc.get_genealogy_embedding_arrays(SPTREE, GTREE, IMAP)
+    print(f"Test Model Genealogy embedding table\n{ETABLE}\n")
 
     p_no = get_fast_prob_tree_unchanged(E.emb[0], E.enc[0], E.barr[0], E.sarr[0])
-    print(f"Probability of no-change\n{p_no:.3f}\n")
+    # print(f"Probability of no-change\n{p_no:.3f}\n")
 
-    p_tree = get_fast_prob_tree_changed(E.emb[0], E.enc[0], E.barr[0], E.sarr[0])
-    print(f"Probability of tree-change\n{p_tree:.3f}\n")
 
-    lambdas_ = get_fast_tree_changed_lambdas(E.emb, E.enc, E.barr, E.sarr, None, 2e-9)
-    print(lambdas_)
+    t = (GTREE[2].up.height - GTREE[2].height) / 2
+    print(ipcoal.smc.get_probability_tree_unchanged_given_b_and_tr(SPTREE, GTREE, IMAP, 2, t))
+
+    print(enc[0])
+    p = get_prob_tree_unchanged_given_b_and_tr(emb[0], enc[0], bidx=2, time=t)
+    print(p)
+
+    # p_tree = get_fast_prob_tree_changed(E.emb[0], E.enc[0], E.barr[0], E.sarr[0])
+    # print(f"Probability of tree-change\n{p_tree:.3f}\n")
+
+    # lambdas_ = get_fast_tree_changed_lambdas(E.emb, E.enc, E.barr, E.sarr, None, 2e-9)
+    # print(lambdas_)
 
     # # p_tree = get_probability_tree_change(SPTREE, GTREE, IMAP)
     # # p_topo = get_probability_topology_change(SPTREE, GTREE, IMAP)
 
     # # print(f"Probability of tree-change\n{p_tree:.3f}\n")
     # # print(f"Probability of topology-change\n{p_topo:.3f}\n")
-
-
-
 
 
     # # setup species tree model

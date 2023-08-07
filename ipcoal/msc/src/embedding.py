@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-"""An embedding table for MSC calculations.
+"""Parse an embedding table for MSC calculations.
 
-# ['start', 'stop', 'st_node', 'neff', 'nedges', 'dist', 'gidx']
+# ['start', 'stop', 'st_node', 'neff', 'nedges', 'dist', 'gidx', ...]
 
 >>> get_genealogy_embedding_table(sptree, gtree, imap)
 """

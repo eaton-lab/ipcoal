@@ -8,7 +8,7 @@ downstream analyses.
 """
 
 from typing import List, Tuple, Optional, Dict, Union, Iterator
-import os
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import msprime as ms
@@ -1189,7 +1189,13 @@ class Model:
                 imap[key].append(name)
         return imap
 
-    def write_popfile(self, name: str, outdir: str = "./", diploid: bool = False):
+    def write_popfile(
+        self,
+        name: Optional[str] = None,
+        outdir: str = "./",
+        diploid: bool = False,
+        invert: bool = False,
+    ) -> str:
         """Writes popfile mapping species tree tips to sample names.
 
         The sample names here represent those that are in the written
@@ -1214,6 +1220,8 @@ class Model:
         diploid: bool
             If diploid=True was used when writing the data files then
             it should also be used when writing the popfile.
+        invert: bool
+            If True then maps "sample\tpop" instead of "pop\tsample".
         """
         name = name.rsplit(".tsv")[0].rsplit(".popfile")[0]
         popdata = []
@@ -1223,12 +1231,45 @@ class Model:
             alleles=self.alleles,
             diploid=diploid,
         )
-        for tip in txf.names:
-            popdata.append(f"{tip.rsplit('_')[0]}\t{tip}")
-        outname = os.path.join(outdir, name + ".popfile.tsv")
-        with open(outname, 'w', encoding="utf-8") as out:
-            out.write("\n".join(popdata))
-        print(f"wrote popfile to {outname}")
+        if not invert:
+            for tip in txf.names:
+                popdata.append(f"{tip.rsplit('_')[0]}\t{tip}")
+        else:
+            for tip in txf.names:
+                popdata.append(f"{tip}\t{tip.rsplit('_')[0]}")
+        outdir = Path(outdir)
+        outname = outdir / f"{name}.popfile.tsv"
+
+        # ...
+        if name:
+            with open(outname, 'w', encoding="utf-8") as out:
+                out.write("\n".join(popdata))
+            return outname
+        else:
+            return "\n".join(popdata)
+
+    def write_sites_file(
+        self,
+        name: Path,
+        outdir: Path = "./",
+    ) -> Path:
+        """Write variants to a sites file (used by ARGWeaver).
+
+        """
+        from ipcoal.io.transformer import convert_intarr_to_bytearr
+        def get_variants(model, i):
+            return b"".join(convert_intarr_to_bytearr(model.seqs[:, :, i - 1])).decode()
+
+        outname = Path(outdir) / f"{name}.sites"
+        vdf = self.write_vcf()
+        with open(outname, 'w') as out:
+            names = '\t'.join(self.alpha_ordered_names)
+            out.write(f"NAMES\t{names}\n")
+            out.write(f"REGION\tchr\t1\t{self.seqs.shape[2]}\n")
+            for idx in vdf.index:
+                pos = vdf.POS[idx]
+                out.write(f"{pos}\t{get_variants(self, pos)}\n")
+        return outname
 
     # ---------------------------------------------------------------
     # post-sim methods

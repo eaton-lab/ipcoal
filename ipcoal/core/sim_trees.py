@@ -11,6 +11,7 @@ from loguru import logger
 import numpy as np
 import pandas as pd
 from ipcoal.utils.utils import IpcoalError
+from tskit import TreeSequence
 
 logger = logger.bind(name="ipcoal")
 Model = TypeVar("Model")
@@ -61,6 +62,7 @@ def sim_trees(
     model.rng_muts = None     # doesn't matter in sim_trees
     model.subst_model = None  # doesn't matter in sim_trees
 
+    # send simulate jobs in chunks
     chunksize = int(nloci / nproc) + (nloci % nproc)
     chunksize = max(chunksize, 100)
     rasyncs = {}
@@ -87,7 +89,7 @@ def sim_trees(
     model.df = pd.concat(datalist, axis=0)
     model.df = model.df.reset_index(drop=True)
 
-    # re-set generators on objects
+    # re-set RNG generators and subst model on objects
     model._reset_random_generators()
     model.subst_model = _old_substitution_model
     return None
@@ -99,7 +101,7 @@ def _sim_trees(
     nsites: int,
     precision: int = 14,
     seeds: Sequence[int] = None,
-) -> Tuple[pd.DataFrame, Mapping[int, 'TreeSequence']]:
+) -> Tuple[pd.DataFrame, Mapping[int, TreeSequence]]:
     """Simulate unlinked genealogies.
 
     This is the main loop that can be run on parallel engines.
@@ -211,6 +213,5 @@ if __name__ == "__main__":
 
     TREE = toytree.rtree.unittree(ntips=6, treeheight=1e6)
     MODEL = ipcoal.Model(TREE, Ne=1e4, seed_trees=123)
-    # sim_trees(MODEL, 4000, 1e4, nproc=4)
     MODEL.sim_trees(40, 1e4, nproc=1)
     print(MODEL.df)

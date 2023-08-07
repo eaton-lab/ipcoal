@@ -23,16 +23,13 @@ import toytree
 from toytree import ToyTree
 from loguru import logger
 from ipcoal.msc import get_genealogy_embedding_arrays
-from ipcoal.smc.src.utils import (
-    iter_topos_and_spans_from_model,
-    # iter_unique_topologies_from_trees
-)
 
 logger = logger.bind(name="ipcoal")
 
 
 class TreeEmbedding:
-
+    """Class object to parse and store gene tree embedding data.
+    """
     def __init__(
         self,
         species_tree: ToyTree,
@@ -75,6 +72,7 @@ class TreeEmbedding:
         if isinstance(self.genealogies, str):
             return [toytree.tree(self.genealogies)]
 
+        # if given a list of newick strings then parallelize tree parsing.
         if isinstance(self.genealogies[0], str):
             chunksize = 1_000
             rasyncs = {}
@@ -88,15 +86,20 @@ class TreeEmbedding:
             for i in mtrees[1:]:
                 genealogies += i.treelist
             return genealogies
+
         if isinstance(self.genealogies[0], ToyTree):
             return self.genealogies
         raise TypeError("genealogies input must be one or more ToyTree or str types.")
 
     def _get_embedding_table_parallel(self, gtrees: Sequence[ToyTree]) -> np.ndarray:
-        """...
+        """Return embedding arrays.
 
         """
-        # send N trees at a time to engines
+        # non-parallel return
+        if self._nproc == 1:
+            return get_genealogy_embedding_arrays(self.species_tree, gtrees, self.imap)
+
+        # send N trees at a time to parallel engines
         chunksize = 500
         rasyncs = {}
         with ProcessPoolExecutor(max_workers=self._nproc) as pool:
@@ -108,6 +111,7 @@ class TreeEmbedding:
                 )
                 rasyncs[chunk] = pool.submit(get_genealogy_embedding_arrays, **kwargs)
 
+        # collect parallel results
         embs = []
         encs = []
         for key in sorted(rasyncs):
@@ -124,6 +128,10 @@ class TreeEmbedding:
         The returned table is used in likelihood calculations for the
         waiting distance to topology-change events.
         """
+        # non parallel return
+        if self._nproc == 1:
+            return get_relationships(gtrees)
+
         # send N trees at a time to engines
         chunksize = 200
         rasyncs = {}
@@ -146,7 +154,7 @@ class TreeEmbedding:
         gtrees = self._get_genealogies()
         logger.debug('parsing gtree inputs done')
         self.emb, self.enc = self._get_embedding_table_parallel(gtrees)
-        self.emb[:, :, 3] *= 2  # store all neff as 2 * diploid Ne
+        # self.emb[:, :, 3] *= 2  # store all neff as 2 * diploid Ne
         logger.debug('filling embedding table done')
         self.barr = get_super_lengths_table_jit(self.emb, self.enc)
         self.sarr = self.barr.sum(axis=1)
@@ -271,7 +279,7 @@ def get_super_lengths_table_jit(emb: np.ndarray, enc: np.ndarray) -> np.ndarray:
 
 
 def get_relationships(trees: Sequence[ToyTree]) -> np.ndarray:
-    """..."""
+    """Return an array with the rows of [node, sister, parent] IDs."""
     ntrees = len(trees)
     nnodes = trees[0].nnodes
     rarr = np.zeros((ntrees, nnodes - 1, 3), dtype=np.uint8)
@@ -331,6 +339,7 @@ if __name__ == "__main__":
 
     import ipcoal
     ipcoal.set_log_level("DEBUG")
+    from ipcoal.smc.src.utils import iter_topos_and_spans_from_model
 
     sptree = toytree.rtree.imbtree(4, treeheight=1e6)
     model = ipcoal.Model(sptree, Ne=1e5, nsamples=2)
@@ -338,7 +347,7 @@ if __name__ == "__main__":
     logger.debug('simulation done')
     imap = model.get_imap_dict()
 
-    t1 = TreeEmbedding(model.tree, model.df.genealogy, imap)
+    t1 = TreeEmbedding(model.tree, model.df.genealogy, imap, nproc=1)
     print('emb', t1.emb.shape, t1.emb.dtype)
     print('emc', t1.enc.shape, t1.enc.dtype)
     print('barr', t1.barr.shape, t1.barr.dtype)
