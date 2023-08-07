@@ -162,6 +162,32 @@ class TreeEmbedding:
         self.rarr = self._get_relationship_table_parallel(gtrees)
         logger.debug('filling relationships table done')
 
+    def _update_neffs(self, params: np.ndarray) -> None:
+        """Update neff values in the embedding table.
+
+        The length of the array must be the same length as the number
+        of populations. values are assigned to populations based on
+        the species tree interval labels in the embedding table. This
+        is used during likelihood optimization.
+        """
+        self.emb = _jit_update_neffs(self.emb, params)
+
+
+@njit
+def _jit_update_neffs(emb: np.ndarray, params: np.ndarray) -> None:
+    """Update neff values in the embedding table.
+
+    The length of the array must be the same length as the number
+    of populations. values are assigned to populations based on
+    the species tree interval labels in the embedding table.
+    """
+    for tidx in range(emb.shape[0]):
+        arr = emb[tidx]
+        for pidx in range(params.shape[0]):
+            mask = arr[:, 2] == pidx
+            arr[mask, 3] = params[pidx]
+    return emb
+
     # def get_waiting_distance_likelihood(
     #     self,
     #     event_type: int,
@@ -291,16 +317,16 @@ def get_relationships(trees: Sequence[ToyTree]) -> np.ndarray:
     return rarr
 
 
-@njit
-def get_genealogy_embedding_edge_path(garr: np.ndarray, bidx: int) -> np.ndarray:
-    """Return intervals of an embedding table for one gtree branch.
+# @njit
+# def get_genealogy_embedding_edge_path(garr: np.ndarray, bidx: int) -> np.ndarray:
+#     """Return intervals of an embedding table for one gtree branch.
 
-    The embedding table must include the Node IDs, e.g., it must come
-    from TreeEmbedding, TopologyEmbedding, or by using the arg
-    encode=True to `get_genealogy_embedding_table`.
-    """
-    idxs = np.nonzero(garr[:, 7 + bidx])[0]
-    return garr[idxs, :]
+#     The embedding table must include the Node IDs, e.g., it must come
+#     from TreeEmbedding, TopologyEmbedding, or by using the arg
+#     encode=True to `get_genealogy_embedding_table`.
+#     """
+#     idxs = np.nonzero(garr[:, 7 + bidx])[0]
+#     return garr[idxs, :]
 
 
 # EXPERIMENTAL IDEA OF USING JIT CLASS
@@ -362,3 +388,8 @@ if __name__ == "__main__":
     print('barr', t2.barr.shape, t2.barr.dtype)
     print('sarr', t2.sarr.shape, t2.sarr.dtype)
     print('rarr', t2.rarr.shape, t2.rarr.dtype)
+
+    print(t2.emb[0])
+    params = np.array([100, 200, 300, 400, 500, 600, 700]).astype(float)
+    t2._update_neffs(params)
+    print(t2.emb[0])
