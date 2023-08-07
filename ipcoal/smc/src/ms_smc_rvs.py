@@ -105,7 +105,7 @@ def get_distribution_waiting_distance_to_tree_change(
     genealogy: ToyTree,
     imap: Mapping[str, Sequence[str]],
     recombination_rate: float,
-) -> stats._distn_infrastructure.rv_continuous_frozen:
+) -> stats._distn_infrastructure.rv_frozen:
     r"""Return the exponential probability density for waiting distance
     to next tree-change event.
 
@@ -191,7 +191,7 @@ def get_distribution_waiting_distance_to_topo_change(
     genealogy: ToyTree,
     imap: Mapping[str, Sequence[str]],
     recombination_rate: float,
-) -> stats._distn_infrastructure.rv_continuous_frozen:
+) -> stats._distn_infrastructure.rv_frozen:
     r"""Return the exponential probability density for waiting distance
     to next topo-change event.
 
