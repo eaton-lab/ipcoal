@@ -18,6 +18,7 @@ attribute which is the .table stored as a ndarray for fast computing.
 from typing import Mapping, Sequence, Optional, List
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
+import pandas as pd
 from numba import njit, prange
 import toytree
 from toytree import ToyTree
@@ -171,6 +172,13 @@ class TreeEmbedding:
         is used during likelihood optimization.
         """
         self.emb = _jit_update_neffs(self.emb, params)
+
+    def get_table(self, gidx: int = 0) -> pd.DataFrame:
+        """Return a genealogy embedding table for a specific genealogy"""
+        return pd.DataFrame(
+            self.emb[gidx],
+            columns=['start', 'stop', 'st_node', 'neff', 'nedges', 'dist', 'gidx'],
+        )
 
 
 @njit
@@ -393,3 +401,5 @@ if __name__ == "__main__":
     params = np.array([100, 200, 300, 400, 500, 600, 700]).astype(float)
     t2._update_neffs(params)
     print(t2.emb[0])
+
+    print(t2.get_table(0))
