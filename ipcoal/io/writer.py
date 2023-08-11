@@ -48,7 +48,8 @@ class Writer:
         self.seqs = model.seqs.copy()
         self.names = model.alpha_ordered_names.copy()
         self.alleles = model.alleles.copy()
-        self.ancestral_seq = model.ancestral_seq.copy()
+        if model.ancestral_seq is not None:
+            self.ancestral_seq = model.ancestral_seq.copy()
         self.alt_seqs = alt_seqs
 
         self.outdir: str = None
