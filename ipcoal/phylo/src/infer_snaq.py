@@ -92,7 +92,7 @@ class Snaq:
     # optional with defaults
     force: bool = False
     nruns: int = 10
-    nproc: int = 4
+    nproc: int = 5
     path_to_julia: Optional[str] = None
 
     # i/o paths for result files in workdir
@@ -230,13 +230,13 @@ class Snaq:
         # if no net_in then look for [workdir][name][nedges-1].network
         self._nedges = nedges
         self._net_in = self._get_starting_net(net_in)
-        self._seed = np.random.randint(int(1e7)) if seed is None else seed
+        self._seed = np.random.randint(int(1e12)) if seed is None else seed
         self._basename = self.workdir / f"{self.name}.snaq.net-{nedges}"
         self.log = self.workdir / f"{self.name}.snaq.net-{nedges}.log"
         self.network = self.workdir / f"{self.name}.snaq.net-{nedges}.out"
         self._run_network_inference()
 
-    def plot_network_loglik(self, nedges: List[int]=None) -> Tuple["Canvas", "Axes", "Mark"]:
+    def plot_network_loglik(self, nedges: List[int] = None) -> Tuple["Canvas", "Axes", "Mark"]:
         """..."""
         # parse data from outfiles
         outfiles = self.workdir.glob(f"{self.name}.snaq.net-*.out")
@@ -272,10 +272,20 @@ def infer_snaq_network(
     # imap: Dict[str, Sequence[str]] = None,
     # nboots: int = 1000,
     # annotation: int = 3,
-) -> Tuple[toytree.ToyTree, Mapping[int, int]]:
+) -> None:
+    """Infer phylogenetic networks using SNAQ.
 
+    This function is intended to make it easy to run SNAQ on a set of
+    trees and to compare the results for differnt numbers of edges.
+    If nedges=2 then networks will be inferred for h=0, h=1, and h=2
+    so that you can compare the results.
+
+    Parameters
+    ----------
+    ...
+    """
     # append proc id to name
-    suffix = f"snaq-p{os.getpid()}"
+    suffix = f"p{os.getpid()}"
     name = f"{name}-{suffix}" if name is not None else suffix
 
     # get tmpdir or use gettempdir
@@ -283,7 +293,9 @@ def infer_snaq_network(
 
     # write trees input as a newline separated file to tmpdir
     tmpdir = Path(tmpdir)
-    # TODO: Make above exit if not.
+    tmpdir.mkdir(exist_ok=True)
+
+    # write the .trees file to tmpdir
     with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"-{os.getpid()}") as tmpfile:
         fname = Path(tmpfile.name)
 
@@ -306,14 +318,19 @@ def infer_snaq_network(
         nproc=nproc,
     )
 
+    # run at nedges=0 to infer starting tree if one was not provided.
     if starting_tree is None:
-        tool.run(nedges=0, net_in=None, seed=123)
+        tool.run(nedges=0, net_in=None, seed=seed)
         net_in = None
     else:
+        tool.run(nedges=0, net_in=starting_tree, seed=seed)
         net_in = starting_tree
+
+    # run for nedges in range(1, nedges) using last result as net_in
+    # except for edges=1 can re-use fixed net_in.
     for i in range(1, nedges + 1):
-        tool.run(nedges=i, net_in=net_in, seed=123)
-        net_in = None  # use last result in folder
+        tool.run(nedges=i, net_in=net_in, seed=seed)
+        net_in = None
     logger.info(f"results writting to {tmpdir}")
 
 
@@ -354,10 +371,14 @@ if __name__ == "__main__":
     model = ipcoal.Model(tree)
     model.sim_trees(1000)
     mtree = toytree.mtree(model.df.genealogy)
+
+    # ...
     result = infer_snaq_network(
         trees=mtree,
         binary_path="/home/deren/local/src/julia-1.6.2/bin/julia",
-        tmpdir="/tmp",
+        tmpdir="/tmp/snaqtest",
         starting_tree=tree.write(None, None, None),
+        nedges=1,
+        seed=321,
     )
     print(result)
