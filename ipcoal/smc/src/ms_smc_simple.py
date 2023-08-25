@@ -276,6 +276,8 @@ if __name__ == "__main__":
     TIME = 500
 
     SPTREE, GTREE, IMAP = ipcoal.msc.get_test_data()
+    SPTREE, GTREE, IMAP = ipcoal.smc.src.utils.get_test_data()
+    print(IMAP)
 
     p = get_prob_tree_unchanged_given_b_and_tr(SPTREE, GTREE, IMAP, BRANCH, TIME)
     print(f"Prob(tree-unchanged | S, G, b=0, tr=500) = {p}\n")

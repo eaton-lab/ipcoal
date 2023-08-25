@@ -64,9 +64,10 @@ def get_msc_loglik_from_embedding(embedding: np.ndarray) -> float:
     """
     ntrees = embedding.shape[0]
     nspecies = int(embedding[0, -1, 2])
-    logliks = np.zeros(ntrees, dtype=np.float64)
+    # logliks = np.zeros(ntrees, dtype=np.float64)
 
     # iterate over gtrees
+    sum_neg_loglik = 0
     for gidx in prange(ntrees):
         garr = embedding[gidx]
 
@@ -102,8 +103,10 @@ def get_msc_loglik_from_embedding(embedding: np.ndarray) -> float:
                 loglik += np.log(prob)
             else:
                 loglik += np.inf
-        logliks[gidx] = loglik
-    return -logliks.sum()
+        sum_neg_loglik += -loglik
+    return sum_neg_loglik
+    #     logliks[gidx] = loglik
+    # return -logliks.sum()
 
 
 def test_kingman(neff: float = 1e5, nsamples: int = 10, ntrees: int = 500):

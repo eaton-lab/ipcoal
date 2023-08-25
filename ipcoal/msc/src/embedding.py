@@ -82,8 +82,11 @@ def _get_fast_genealogy_embedding_table(
             # update counters and indexers
             start = gt_node._height
             edges.add(gt_node._idx)
-            for child in gt_node._children:
-                edges.remove(child._idx)
+            try:
+                for child in gt_node._children:
+                    edges.remove(child._idx)
+            except KeyError as err:
+                raise ValueError("gene tree cannot be embedded in species tree.") from err
             for tip in gt_node.get_leaves():
                 name_to_node[tip.name] = gt_node
 

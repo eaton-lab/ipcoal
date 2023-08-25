@@ -36,12 +36,14 @@ class TreeEmbedding:
         species_tree: ToyTree,
         genealogies: Sequence[ToyTree],
         imap: Mapping[str, Sequence[str]],
+        # topo_idxs: Optional[np.ndarray] = None,
         nproc: Optional[int] = None,
     ):
         # store inputs
         self.species_tree = species_tree
         self.genealogies = genealogies
         self.imap = imap
+        # self.topo_idxs = topo_idxs
         self._nproc = nproc
         self._check_sptree()
 
@@ -68,10 +70,10 @@ class TreeEmbedding:
     def _get_genealogies(self) -> Sequence[ToyTree]:
         """Parse gene tree input to a list of ToyTrees."""
         if isinstance(self.genealogies, ToyTree):
-            return [self.genealogies]
+            self.genealogies = [self.genealogies]
 
         if isinstance(self.genealogies, str):
-            return [toytree.tree(self.genealogies)]
+            self.genealogies = [toytree.tree(self.genealogies)]
 
         # if given a list of newick strings then parallelize tree parsing.
         if isinstance(self.genealogies[0], str):
@@ -86,28 +88,28 @@ class TreeEmbedding:
             genealogies = mtrees[0].treelist
             for i in mtrees[1:]:
                 genealogies += i.treelist
-            return genealogies
+            self.genealogies = genealogies
 
         if isinstance(self.genealogies[0], ToyTree):
-            return self.genealogies
-        raise TypeError("genealogies input must be one or more ToyTree or str types.")
+            self.genealogies = self.genealogies
+        else:
+            raise TypeError(
+                "genealogies input must be one or more ToyTree or str types.")
 
-    def _get_embedding_table_parallel(self, gtrees: Sequence[ToyTree]) -> np.ndarray:
-        """Return embedding arrays.
-
-        """
+    def _get_embedding_table_parallel(self, chunksize: int = 500) -> np.ndarray:
+        """Return embedding arrays."""
         # non-parallel return
         if self._nproc == 1:
-            return get_genealogy_embedding_arrays(self.species_tree, gtrees, self.imap)
+            return get_genealogy_embedding_arrays(
+                self.species_tree, self.genealogies, self.imap)
 
         # send N trees at a time to parallel engines
-        chunksize = 500
         rasyncs = {}
         with ProcessPoolExecutor(max_workers=self._nproc) as pool:
-            for chunk in range(0, len(gtrees), chunksize):
+            for chunk in range(0, len(self.genealogies), chunksize):
                 kwargs = dict(
                     species_tree=self.species_tree,
-                    genealogies=gtrees[chunk: chunk + chunksize],
+                    genealogies=self.genealogies[chunk: chunk + chunksize],
                     imap=self.imap,
                 )
                 rasyncs[chunk] = pool.submit(get_genealogy_embedding_arrays, **kwargs)
@@ -123,7 +125,7 @@ class TreeEmbedding:
         enc = np.concatenate(encs)
         return emb, enc
 
-    def _get_relationship_table_parallel(self, gtrees: Sequence[ToyTree]) -> np.ndarray:
+    def _get_relationship_table_parallel(self, chunksize: int = 500) -> np.ndarray:
         """Return an array with relationships among nodes in each genealogy.
 
         The returned table is used in likelihood calculations for the
@@ -131,14 +133,13 @@ class TreeEmbedding:
         """
         # non parallel return
         if self._nproc == 1:
-            return get_relationships(gtrees)
+            return get_relationships(self.genealogies)
 
         # send N trees at a time to engines
-        chunksize = 200
         rasyncs = {}
         with ProcessPoolExecutor(max_workers=self._nproc) as pool:
-            for chunk in range(0, len(gtrees), chunksize):
-                trees = gtrees[chunk: chunk + chunksize]
+            for chunk in range(0, len(self.genealogies), chunksize):
+                trees = self.genealogies[chunk: chunk + chunksize]
                 rasyncs[chunk] = pool.submit(get_relationships, trees)
 
         rtables = []
@@ -152,15 +153,21 @@ class TreeEmbedding:
 
     def run(self):
         """Fill the data arrays using parallel processing."""
-        gtrees = self._get_genealogies()
+        # parse self.genealogies as a List[Toytree]
+        self._get_genealogies()
         logger.debug('parsing gtree inputs done')
-        self.emb, self.enc = self._get_embedding_table_parallel(gtrees)
-        # self.emb[:, :, 3] *= 2  # store all neff as 2 * diploid Ne
+
+        # extract embeddings in parallel
+        self.emb, self.enc = self._get_embedding_table_parallel()
         logger.debug('filling embedding table done')
+
+        # get summed edge lengths
         self.barr = get_super_lengths_table_jit(self.emb, self.enc)
         self.sarr = self.barr.sum(axis=1)
         logger.debug('filling edge lengths table done')
-        self.rarr = self._get_relationship_table_parallel(gtrees)
+
+        # get relationships table
+        self.rarr = self._get_relationship_table_parallel()
         logger.debug('filling relationships table done')
 
     def _update_neffs(self, params: np.ndarray) -> None:
@@ -195,6 +202,64 @@ def _jit_update_neffs(emb: np.ndarray, params: np.ndarray) -> None:
             mask = arr[:, 2] == pidx
             arr[mask, 3] = params[pidx]
     return emb
+
+
+@njit(parallel=True)
+def _jit_update_neff(emb: np.ndarray, idx: int, neff: float) -> np.ndarray:
+    """
+    Update NEFF with no parallel race condition. Tested. This also does
+    NOT change the original array, it returns a copy.
+    """
+    arr = np.zeros(emb.shape, dtype=np.float64)
+    for lidx in prange(emb.shape[0]):
+        a = emb[lidx].copy()
+        a[a[:, 2] == idx, 3] = neff
+        arr[lidx] = a
+    return arr
+
+
+@njit
+def _old_jit_update_neff(emb: np.ndarray, idx: int, neff: float) -> None:
+    """Update a single neff value in the embedding table.
+
+    The length of the array must be the same length as the number
+    of populations. values are assigned to populations based on
+    the species tree interval labels in the embedding table.
+    """
+    for tidx in range(emb.shape[0]):
+        arr = emb[tidx]
+        arr[arr[:, 2] == idx, 3] = neff
+    return emb
+
+
+@njit
+def _jit_update_2pop_tau(emb: np.ndarray, tau: float) -> None:
+    """Update population assignments (st_node) in the embedding table.
+
+    This function is only currently written to support a two-population
+    model. Further developments are needed for more complex trees. This
+    will update the 'st_node' value for every interval in a tree based
+    on the 'tau' value provided, representing the divergence time of
+    the two populations.
+    """
+    for tidx in range(emb.shape[0]):
+        arr = emb[tidx]
+        arr[arr[0] > tau] = 2
+    return emb
+
+
+def _embedding_move_tau_up(emb: np.ndarray, tau: float):
+    """
+
+    Any intervals in pop2 that ended below tau are coal events occuring
+    in pop2. These are now coal events that must occur in either pop0
+    or pop1 depending on the edge identities from the encoding table.
+    The nedges values can also change since these are divided from
+    edges that may occur in the other descendant lineage.
+    """
+
+
+
 
     # def get_waiting_distance_likelihood(
     #     self,
@@ -290,7 +355,7 @@ def _jit_update_neffs(emb: np.ndarray, params: np.ndarray) -> None:
     #     """
 
 
-@njit(parallel=True)
+@njit  # (parallel=True)
 def get_super_lengths_table_jit(emb: np.ndarray, enc: np.ndarray) -> np.ndarray:
     """Return array of (ntrees, nnodes - 1) w/ all edge lengths.
 
@@ -300,7 +365,8 @@ def get_super_lengths_table_jit(emb: np.ndarray, enc: np.ndarray) -> np.ndarray:
     nnodes = enc.shape[2]
     barr = np.zeros((ntrees, nnodes - 1), dtype=np.float64)
 
-    for gidx in prange(ntrees):
+    # for gidx in prange(ntrees):
+    for gidx in range(ntrees):
         garr = emb[gidx]
         genc = enc[gidx]
         # iterate over each node
@@ -373,15 +439,17 @@ if __name__ == "__main__":
 
     import ipcoal
     ipcoal.set_log_level("DEBUG")
-    from ipcoal.smc.src.utils import iter_topos_and_spans_from_model
+    from ipcoal.smc.src.utils import get_ms_smc_data_from_model
 
     sptree = toytree.rtree.imbtree(4, treeheight=1e6)
     model = ipcoal.Model(sptree, Ne=1e5, nsamples=2)
-    model.sim_trees(1, 1e4, nproc=6)
+    model.sim_trees(1, 1e5)
     logger.debug('simulation done')
     imap = model.get_imap_dict()
 
-    t1 = TreeEmbedding(model.tree, model.df.genealogy, imap, nproc=1)
+    tree_dists, topo_dists, topo_idxs, trees = get_ms_smc_data_from_model(model)
+
+    t1 = TreeEmbedding(model.tree, trees, imap, nproc=1)
     print('emb', t1.emb.shape, t1.emb.dtype)
     print('emc', t1.enc.shape, t1.enc.dtype)
     print('barr', t1.barr.shape, t1.barr.dtype)
@@ -389,17 +457,11 @@ if __name__ == "__main__":
     print('rarr', t1.rarr.shape, t1.rarr.dtype)
 
     print("")
-    topos = [i[0] for i in iter_topos_and_spans_from_model(model, False)]
-    t2 = TreeEmbedding(model.tree, topos, imap)
+    t2 = TreeEmbedding(model.tree, [trees[i] for i in topo_idxs], imap)
+    # t2.emb = _jit_update_neff(t2.emb, 0, 1.5e5)
     print('emb', t2.emb.shape, t2.emb.dtype)
     print('emc', t2.enc.shape, t2.enc.dtype)
     print('barr', t2.barr.shape, t2.barr.dtype)
     print('sarr', t2.sarr.shape, t2.sarr.dtype)
     print('rarr', t2.rarr.shape, t2.rarr.dtype)
-
-    print(t2.emb[0])
-    params = np.array([100, 200, 300, 400, 500, 600, 700]).astype(float)
-    t2._update_neffs(params)
-    print(t2.emb[0])
-
     print(t2.get_table(0))

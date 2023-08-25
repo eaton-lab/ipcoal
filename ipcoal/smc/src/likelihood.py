@@ -5,14 +5,17 @@ in a species tree.
 
 """
 
-from typing import Sequence, Union, Mapping
+from typing import Sequence, Union, Mapping, Optional
 from scipy import stats
 import numpy as np
 from toytree import ToyTree, MultiTree
+from numba import njit, prange
 from loguru import logger
 from ipcoal.smc.src.embedding import TreeEmbedding
 from ipcoal.smc.src.ms_smc_tree_prob import get_tree_changed_lambdas
 from ipcoal.smc.src.ms_smc_topo_prob import get_topo_changed_lambdas
+from ipcoal.smc.src.ms_smc_tree_prob import get_prob_tree_unchanged_from_arrays
+from ipcoal.smc.src.ms_smc_topo_prob import get_prob_topo_unchanged_from_arrays
 
 logger = logger.bind(name="ipcoal")
 
@@ -49,6 +52,7 @@ def get_ms_smc_loglik_from_embedding(
     recombination_rate: float,
     lengths: np.ndarray,
     event_type: int = 1,
+    idxs: Optional[np.ndarray] = None,
 ) -> float:
     """Return -loglik of observed waiting distances between specific
     recombination event-types given a species tree and genealogies.
@@ -65,6 +69,10 @@ def get_ms_smc_loglik_from_embedding(
         0 = any recombination event.
         1 = tree-change event.
         2 = topology-change event.
+    idxs: np.ndarray or None
+        An optional int array to select a subset of trees from the
+        Embedding. This allows using the same embedding table for tree
+        and topology changes by subsetting the topology-change indices.
 
     Examples
     --------
@@ -81,6 +89,11 @@ def get_ms_smc_loglik_from_embedding(
     else:
         rate_function = get_topo_changed_lambdas
 
+    # get mask
+    if idxs is None:
+        idxs = np.arange(embedding.emb.shape[0])
+
+    # get lambdas from rate function
     rates = rate_function(
         emb=embedding.emb,
         enc=embedding.enc,
@@ -88,11 +101,125 @@ def get_ms_smc_loglik_from_embedding(
         sarr=embedding.sarr,
         rarr=embedding.rarr,
         recombination_rate=recombination_rate,
+        idxs=idxs,
     )
 
     # get logpdf of observed waiting distances given rates (lambdas)
     logliks = stats.expon.logpdf(scale=1 / rates, x=lengths)
     return -np.sum(logliks)
+
+
+# @njit  # (parallel=True)
+# def faster_likelihood(
+#     emb: np.ndarray,
+#     enc: np.ndarray,
+#     barr: np.ndarray,
+#     sarr: np.ndarray,
+#     rarr: np.ndarray,
+#     recombination_rate: float,
+#     tree_lengths: np.ndarray,
+#     topo_lengths: np.ndarray,
+#     topo_idxs: np.ndarray = None,
+# ) -> float:
+#     """
+#     """
+#     # ...
+#     sum_neg_loglik = 0.
+#     tidx = 0
+#     for gidx in range(emb.shape[0]):
+#         gemb = emb[gidx]
+#         genc = enc[gidx]
+#         blens = barr[gidx]
+#         sumlen = sarr[gidx]
+
+#         prob_un_tree = get_prob_tree_unchanged_from_arrays(gemb, genc, blens, sumlen)
+#         lambda_tree = sumlen * (1 - prob_un_tree) * recombination_rate
+#         sum_neg_loglik += -np.log(lambda_tree * np.exp(-lambda_tree * tree_lengths[gidx]))
+
+#     for tidx, gidx in enumerate(topo_idxs):
+#         gemb = emb[gidx]
+#         genc = enc[gidx]
+#         blens = barr[gidx]
+#         sumlen = sarr[gidx]
+#         relate = rarr[gidx]
+#         prob_un_topo = get_prob_topo_unchanged_from_arrays(gemb, genc, blens, sumlen, relate)
+#         lambda_topo = sumlen * (1 - prob_un_topo) * recombination_rate
+#         sum_neg_loglik += -np.log(lambda_topo * np.exp(-lambda_topo * topo_lengths[tidx]))
+#     return sum_neg_loglik
+
+
+# @njit(parallel=True)
+# def faster_likelihood_parallel(
+#     emb: np.ndarray,
+#     enc: np.ndarray,
+#     barr: np.ndarray,
+#     sarr: np.ndarray,
+#     rarr: np.ndarray,
+#     recombination_rate: float,
+#     tree_lengths: np.ndarray,
+#     topo_lengths: np.ndarray,
+#     topo_idxs: np.ndarray = None,
+# ) -> float:
+#     """
+#     """
+#     # ...
+#     sum_neg_loglik = 0.
+#     tidx = 0
+#     for gidx in prange(emb.shape[0]):
+#         gemb = emb[gidx]
+#         genc = enc[gidx]
+#         blens = barr[gidx]
+#         sumlen = sarr[gidx]
+
+#         prob_un_tree = get_prob_tree_unchanged_from_arrays(gemb, genc, blens, sumlen)
+#         lambda_tree = sumlen * (1 - prob_un_tree) * recombination_rate
+#         loglik = -np.log(lambda_tree * np.exp(-lambda_tree * tree_lengths[gidx]))
+
+#         if gidx in topo_idxs:
+#             relate = rarr[gidx]
+#             prob_un_topo = get_prob_topo_unchanged_from_arrays(gemb, genc, blens, sumlen, relate)
+#             lambda_topo = sumlen * (1 - prob_un_topo) * recombination_rate
+#             loglik += -np.log(lambda_topo * np.exp(-lambda_topo * topo_lengths[tidx]))
+#             tidx += 1
+#         sum_neg_loglik += loglik
+#     return sum_neg_loglik
+
+
+# @njit # parallel=True)
+# def faster_likelihood_not_parallel(
+#     emb: np.ndarray,
+#     enc: np.ndarray,
+#     barr: np.ndarray,
+#     sarr: np.ndarray,
+#     rarr: np.ndarray,
+#     recombination_rate: float,
+#     tree_lengths: np.ndarray,
+#     topo_lengths: np.ndarray,
+#     topo_idxs: np.ndarray = None,
+# ) -> float:
+#     """
+#     """
+#     # ...
+#     sum_neg_loglik = 0.
+#     tidx = 0
+#     for gidx in range(emb.shape[0]):
+#         gemb = emb[gidx]
+#         genc = enc[gidx]
+#         blens = barr[gidx]
+#         sumlen = sarr[gidx]
+
+#         prob_un_tree = get_prob_tree_unchanged_from_arrays(gemb, genc, blens, sumlen)
+#         lambda_tree = sumlen * (1 - prob_un_tree) * recombination_rate
+#         loglik = -np.log(lambda_tree * np.exp(-lambda_tree * tree_lengths[gidx]))
+
+#         if gidx in topo_idxs:
+#             relate = rarr[gidx]
+#             prob_un_topo = get_prob_topo_unchanged_from_arrays(gemb, genc, blens, sumlen, relate)
+#             lambda_topo = sumlen * (1 - prob_un_topo) * recombination_rate
+#             loglik += -np.log(lambda_topo * np.exp(-lambda_topo * topo_lengths[tidx]))
+#             tidx += 1
+#         sum_neg_loglik += loglik
+#     return sum_neg_loglik
 
 
 def get_ms_smc_loglik(
@@ -102,6 +229,7 @@ def get_ms_smc_loglik(
     recombination_rate: float,
     lengths: np.ndarray,
     event_type: int = 1,
+    idxs: Optional[np.ndarray] = None,
 ) -> float:
     """Return -loglik of tree-sequence waiting distances between
     tree change events given species tree parameters.
@@ -149,7 +277,7 @@ def get_ms_smc_loglik(
     # get embedding and calculate likelihood
     embedding = TreeEmbedding(species_tree, genealogies, imap)
     return get_ms_smc_loglik_from_embedding(
-        embedding, recombination_rate, lengths, event_type)
+        embedding, recombination_rate, lengths, event_type, idxs)
 
 
 # def get_simple_waiting_distance_likelihood(
@@ -218,6 +346,7 @@ if __name__ == "__main__":
     model.sim_trees(NLOCI, NSITES)
     imap = model.get_imap_dict()
 
+    
     genealogies = toytree.mtree(model.df.genealogy)
     glens = model.df.nbps.values
     G = TreeEmbedding(model.tree, genealogies, imap, nproc=20)

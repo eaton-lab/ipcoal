@@ -64,7 +64,9 @@ def sim_trees(
 
     # send simulate jobs in chunks
     chunksize = int(nloci / nproc) + (nloci % nproc)
-    chunksize = max(chunksize, 100)
+    # chunksize = max(chunksize, 100)
+    chunksize = max(chunksize, 1)
+    # logger.info(f"simulating {chunksize} trees in parallel on {nproc} cpus")
     rasyncs = {}
     with ProcessPoolExecutor(max_workers=nproc) as pool:
         for chunk in range(0, nloci, chunksize):
