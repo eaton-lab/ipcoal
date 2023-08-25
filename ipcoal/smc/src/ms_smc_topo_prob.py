@@ -8,6 +8,7 @@ that has been preorganized into arrays using a TreeEmbedding class
 object. The functions are jit-compiled for speed.
 """
 
+from typing import Optional
 import numpy as np
 from numba import njit, prange
 from ipcoal.smc.src.ms_smc_interval_prob import (
@@ -22,6 +23,7 @@ __all__ = [
     "get_prob_topo_unchanged_given_b_and_tr_from_arrays",
     "get_prob_topo_unchanged_given_b_from_arrays",
     "get_prob_topo_unchanged_from_arrays",
+    "get_topo_changed_lambdas",
 ]
 
 
@@ -165,7 +167,7 @@ def get_prob_topo_unchanged_given_b_from_arrays(
     return (1 / (t_ub - t_lb)) * (pb1 + pb2)
 
 
-@njit
+@njit(parallel=True)
 def get_prob_topo_unchanged_from_arrays(
     gemb: np.ndarray,
     genc: np.ndarray,
@@ -175,13 +177,18 @@ def get_prob_topo_unchanged_from_arrays(
 ) -> float:
     """Return probability that recombination causes a topology-change.
 
+    Parallel prange works at this level without race conditions, but
+    not at one level higher (get_topo_changed_lambdas).
     """
     # iter over all edges of genealogy
     total_prob = 0
-    for bidx, blen in enumerate(barr):
+    for bidx in prange(barr.shape[0]):
+        blen = barr[bidx]
+        # for bidx, blen in enumerate(barr):
         # get relationships
-        sidx = rarr[bidx, 1]
-        pidx = rarr[bidx, 2]
+        # sidx = rarr[bidx, 1]
+        # pidx = rarr[bidx, 2]
+        _, sidx, pidx = rarr[bidx]
 
         # get P(tree-unchanged | S, G, b) for every genealogy
         prob = get_prob_topo_unchanged_given_b_from_arrays(
@@ -197,14 +204,15 @@ def get_prob_topo_unchanged_from_arrays(
     return total_prob
 
 
-@njit(parallel=True)
+@njit
 def get_topo_changed_lambdas(
     emb: np.ndarray,
     enc: np.ndarray,
     barr: np.ndarray,
     sarr: np.ndarray,
-    rarr: np.ndarray,  # placeholder
+    rarr: np.ndarray,
     recombination_rate: float,
+    idxs: np.ndarray,
 ) -> np.ndarray:
     """Return LAMBDA rate parameters for waiting distance prob. density.
 
@@ -223,15 +231,20 @@ def get_topo_changed_lambdas(
     sarr: np.ndarray
         Array of (ngenealogies,) w/ sum branch lengths of each tree.
     rarr: np.ndarray or None
-        Placeholder here. Not used.
+        Array of relationships (node, sister, parent)
     recombination_rate: float
         The per-site per-generation recombination rate.
+    idxs: np.ndarray
+        An int array of the indices in the embedding array to use. This
+        can be used to subselect topo-changes from an array with all
+        events, or tree-change events in it. Default is usually
+        idxs=np.arange(emb.shape[0])
     """
-    lambdas = np.zeros(emb.shape[0], dtype=np.float64)
+    lambdas = np.zeros(idxs.size, dtype=np.float64)
 
     # use numba parallel to iterate over genealogies
     # pylint-disable: not-an-iterable
-    for gidx in prange(emb.shape[0]):
+    for idx, gidx in enumerate(idxs):
         gemb = emb[gidx]
         genc = enc[gidx]
         blens = barr[gidx]
@@ -240,7 +253,7 @@ def get_topo_changed_lambdas(
         # probability is a float in [0-1]
         prob_topo = get_prob_topo_unchanged_from_arrays(gemb, genc, blens, sumlen, relate)
         # lambda is a rate > 0
-        lambdas[gidx] = sumlen * (1 - prob_topo) * recombination_rate
+        lambdas[idx] = sumlen * (1 - prob_topo) * recombination_rate
     return lambdas
 
 
@@ -365,10 +378,15 @@ def get_fast_prob_topo_changed(
     """
     return 1 - get_fast_prob_topo_unchanged(gemb, genc, barr, sumlen, rarr)
 
+
+####################################################################
+####################################################################
+####################################################################
+####################################################################
 ####################################################################
 
 
-@njit(parallel=True)
+@njit  # (parallel=True)
 def get_fast_topo_unchanged_lambdas(
     emb: np.ndarray,
     enc: np.ndarray,
@@ -381,7 +399,7 @@ def get_fast_topo_unchanged_lambdas(
 
     """
     lambdas = np.zeros(emb.shape[0])
-    for gidx in prange(emb.shape[0]):
+    for gidx in range(emb.shape[0]):
         gemb = emb[gidx]
         genc = enc[gidx]
         blens = barr[gidx]
@@ -439,24 +457,29 @@ if __name__ == "__main__":
     # calculate probs from embedding arrays
     emb, enc, barr, sarr, rarr = TreeEmbedding(SPTREE, GTREE, IMAP, nproc=1).get_data()
 
-    p = get_prob_topo_unchanged_given_b_and_tr_from_arrays(emb[0], enc[0], bidx=0, sidx=4, pidx=5, time=TIME)
-    print(f"Figure S6 Prob(topo-unchanged | S, G, b, tr) = {p:.4f}\n")
+    # p = get_prob_topo_unchanged_given_b_and_tr_from_arrays(emb[0], enc[0], bidx=0, sidx=4, pidx=5, time=TIME)
+    # print(f"Figure S6 Prob(topo-unchanged | S, G, b, tr) = {p:.4f}\n")
 
-    p = get_prob_topo_unchanged_given_b_from_arrays(emb[0], enc[0], 0, 4, 5)
-    print(f"Figure S6 Prob(topo-unchanged | S, G, b) = {p:.4f}\n")
-
-    emb2 = emb[0].copy()
-    emb2[:, 3] *= 2
-    p = get_fast_prob_topo_unchanged_given_b(emb2, enc[0], bidx=0, sidx=4, pidx=5)
-    print(f"Figure S6 Prob(topo-unchanged | S, G, b) = {p:.4f}\n")
-
-    # p = get_fast_prob_topo_unchanged_given_b(emb[0], enc[0], 0, 4, 5)
+    # p = get_prob_topo_unchanged_given_b_from_arrays(emb[0], enc[0], 0, 4, 5)
     # print(f"Figure S6 Prob(topo-unchanged | S, G, b) = {p:.4f}\n")
 
-    p = get_prob_topo_unchanged_from_arrays(emb[0], enc[0], barr[0], sarr[0], rarr[0])
-    print(f"Figure S6 Prob(topo-unchanged | S, G) = {p:.4f}\n")
-    p = get_fast_prob_topo_unchanged(emb[0], enc[0], barr[0], sarr[0], rarr[0])
-    print(f"Figure S6 Prob(topo-unchanged | S, G) = {p:.4f}\n")
+    # emb2 = emb[0].copy()
+    # emb2[:, 3] *= 2
+    # p = get_fast_prob_topo_unchanged_given_b(emb2, enc[0], bidx=0, sidx=4, pidx=5)
+    # print(f"Figure S6 Prob(topo-unchanged | S, G, b) = {p:.4f}\n")
+
+    # # p = get_fast_prob_topo_unchanged_given_b(emb[0], enc[0], 0, 4, 5)
+    # # print(f"Figure S6 Prob(topo-unchanged | S, G, b) = {p:.4f}\n")
+
+    # p = get_prob_topo_unchanged_from_arrays(emb[0], enc[0], barr[0], sarr[0], rarr[0])
+    # print(f"Figure S6 Prob(topo-unchanged | S, G) = {p:.4f}\n")
+    # p = get_fast_prob_topo_unchanged(emb[0], enc[0], barr[0], sarr[0], rarr[0])
+    # print(f"Figure S6 Prob(topo-unchanged | S, G) = {p:.4f}\n")
+
+    lambdas = get_topo_changed_lambdas(emb, enc, barr, sarr, rarr, 2e-9, np.arange(1))
+    print(lambdas)
+
+    # get_topo_changed_lambdas.parallel_diagnostics(level=4)
 
     raise SystemExit(0)
     ###################################################################

@@ -1,12 +1,20 @@
 #!/usr/bin/env python
 
-"""Utility functions for SMC subpackage."""
+"""Utility functions for SMC subpackage.
 
-from typing import Iterator, Tuple, Sequence, Optional
+
+>>> get_trees_and_spans_from_model(...)
+>>> get_topos_and_spans_from_model(...)
+
+
+"""
+
+from typing import Iterator, Tuple, Optional
+from concurrent.futures import ProcessPoolExecutor
 from loguru import logger
+import numpy as np
 import toytree
 from toytree import ToyTree
-import numpy as np
 import ipcoal
 
 logger = logger.bind(name="ipcoal")
@@ -28,24 +36,28 @@ def iter_spans_and_trees_from_model(
     model: ipcoal.Model,
     locus: Optional[int] = None,
 ) -> Iterator[Tuple[int, ToyTree]]:
-    """Yield (int, ToyTree) tuples parsed from a model object.
+    """Yield (int, ToyTree) tuples for each tree in a tree sequence.
 
-    This is a convenient way to extract ARG data from an ipcoal
-    simulation result, and is used within other functions such as
-    `iter_spans_and_topologies()` to extract spans and topology
-    changes from an ARG.
+    Note: This returns every tree in a tree sequence, it does not check
+    whether the tree has changed or not. To treat these as tree-changes
+    requires that data were simulated under the record_full_arg=False
+    (default) option in ipcoal/msprime such that recombination events
+    causing no-change are not recorded.
     """
     data = model.df[model.df.locus == locus] if locus is not None else model.df
-    for span, newick in data[["nbps", "genealogy"]].values:
+    for span, newick in data[["nbps", "genealogy"]].values[:-1]:
         yield (span, toytree.tree(newick))
 
 
-def iter_spans_and_topologies_from_model(
+def iter_spans_and_topos_from_model(
     model: ipcoal.Model,
     locus: Optional[int] = None,
-    # average_node_heights: bool = False,
 ) -> Iterator[Tuple[int, ToyTree]]:
-    """Return an array of genealogical topology lengths.
+    """Yield (int, ToyTree) tuples for each topology in a tree sequence.
+
+    This checks each tree from `iter_spans_and_trees_from_model` and
+    returns a tree only when the rooted topology changes, and returns
+    the sum of the intervals over which that topology spans.
 
     Parameters
     ----------
@@ -53,151 +65,304 @@ def iter_spans_and_topologies_from_model(
         An ipcoal.Model object that has called a simulate function
         such as `sim_trees`, `sim_loci`, etc. such that it has data
         in its `.df` attribute.
-    average_node_heights: bool
-        If True the node heights are re-calibrated to the site weighted
-        average across all tree-change intervals that occurred during
-        the topology-change waiting distance.
     """
-    current = None
+    iterator = iter_spans_and_trees_from_model(model, locus=locus)
+    span, gtree = next(iterator)
+    current = gtree.get_topology_id(include_root=True)
+    intervals = [span]
+
+    for (span, gtree) in iterator:
+        new = gtree.get_topology_id(include_root=True)
+        if current != new:
+            yield sum(intervals), gtree
+            current = new
+            intervals = [span]
+        else:
+            intervals.append(span)
+
+
+def get_ms_smc_data_from_model(model: ipcoal.Model):
+    """Return tree and topo change data
+
+    # TODO: parallelize by 'locus'
+    """
+    trees = []
+    tree_spans = []
+    topo_idxs = []
+    topo_spans = []
+
+    gidx = 0
+    tidx = 0
+    iterator = iter_spans_and_trees_from_model(model)
+    span, gtree = next(iterator)
+    current = gtree.get_topology_id(include_root=True)
+    intervals = [span]
+
+    # store the first tree
+    tree_spans.append(span)
+    trees.append(gtree)
+
+    # iterate over all subsequent trees
+    for (span, gtree) in iterator:
+        tree_spans.append(span)
+        trees.append(gtree)
+        new = gtree.get_topology_id(include_root=True)
+        gidx += 1
+
+        # if topo change occurred store last tree
+        if current != new:
+            topo_idxs.append(tidx)
+            topo_spans.append(sum(intervals))
+            current = new
+            intervals = [span]
+            tidx = gidx
+        else:
+            intervals.append(span)
+    return np.array(tree_spans), np.array(topo_spans), np.array(topo_idxs), trees
+
+
+def get_waiting_distance_data_from_model(model: ipcoal.Model):
+    """Return tree and topo change data.
+    """
+    trees = []
+    tree_spans = []
+    topo_idxs = []
+    topo_spans = []
     intervals = []
-    # forest = []
+    gidx = 0
+    tidx = 0
 
-    for span, gtree in iter_spans_and_trees_from_model(model, locus=locus):
-        intervals.append(span)
-        # forest.append(gtree.get_node_data())
-        if current:
-            new = gtree.get_topology_id(include_root=True)
-            # if current.distance.get_treedist_rf(gtree, False):
-            if current != new:
-                yield sum(intervals), gtree
-                # current = gtree
-                current = new
+    # treat each locus at a time to skip last tree
+    # in a locus that is cut-off at its ending.
+    for _, ldf in model.df.groupby("locus"):
+        iterator = ldf.iterrows()
+        _, row = next(iterator)
+        ospan, otree = row.nbps, toytree.tree(row.genealogy)
+        otid = otree.get_topology_id(include_root=True)
+
+        # iterate over all subsequent trees
+        for (_, row) in iterator:
+
+            # parse new interval
+            nspan, ntree = row.nbps, toytree.tree(row.genealogy)
+
+            # counter of current interval
+            gidx += 1
+
+            # store the last tree and span
+            tree_spans.append(ospan)
+            trees.append(otree)
+            intervals.append(ospan)
+
+            # get id of new tree
+            ntid = ntree.get_topology_id(include_root=True)
+
+            # if topo change occurred store last tree
+            if otid != ntid:
+                # store index of otree and advance counter
+                topo_idxs.append(tidx)
+                tidx = gidx
+
+                # store span since old tree
+                topo_spans.append(sum(intervals))
                 intervals = []
-        else:
-            # current = gtree
-            current = gtree.get_topology_id(include_root=True)
+
+            otid = ntid
+            ospan = nspan
+            otree = ntree
+    return np.array(tree_spans), np.array(topo_spans), np.array(topo_idxs), trees
 
 
-# NEW BEST FUNCTION WITH NODE HEIGHT AVERAGING
-def iter_topos_and_spans_from_model(
-    model: ipcoal.Model,
-    weighted_node_heights: bool = False,
-) -> Iterator[ToyTree]:
-    """...
-
-    weighted_node_heights: bool
-        Not currently working, negative branch lengths can occur.
+# NOT YET IPMLEMENTED: NEED TO CONCAT
+def new_get_waiting_distance_data_from_model(model: ipcoal.Model, nproc: int = None):
+    """Return tree-dists, topo-dists, topo-change-indices, trees
     """
-    cnewick = None
-    ctree = None
-    ctopo = None
-    forest = {}
-
-    # iterate over trees
-    idata = zip(model.df.genealogy, model.df.nbps)
-    for tidx, (newick, length) in enumerate(idata):
-
-        # load first tree
-        if cnewick is None:
-            cnewick = newick
-            ctree = toytree.tree(newick)
-            ctopo = ctree.get_topology_id(include_root=True)
-            forest[ctree] = length
-            # logger.debug(f"first tree {length}")
-            continue
-
-        # newick str did not change (invisible recomb) just add length
-        # to the last stored tree.
-        if newick == cnewick:
-            forest[ctree] += length
-            # logger.debug(f"no-change {length}")
-            continue
-
-        # newick str changed, check if topology changed. If not, store
-        # the last tree and its length to forest, and update current.
-        else:
-            tree = toytree.tree(newick)
-            topo = tree.get_topology_id(include_root=True)
-            if topo != ctopo:
-                # logger.debug(f"*topo-change -> {sum(forest[i] for i in forest)}")
-                if not weighted_node_heights:
-                    yield ctree, sum(forest[i] for i in forest)
-                else:
-                    heights = {}
-                    w = [forest[i] for i in forest]
-
-                    # cannot use idx labels here, must use anc names...
-                    for nidx in range(ctree.ntips, ctree.nnodes):
-                        hnodes = [t.get_mrca_node(*ctree[nidx].get_leaf_names()) for t in forest]
-                        h = [i.height for i in hnodes]
-                        height = np.average(h, weights=w)
-                        # do not allow averaging to cause negative height
-                        minh = max([heights.get(i._idx, 0) for i in ctree[nidx].children])
-                        if height <= minh:
-                            height = minh + 1
-                        heights[nidx] = height
-                    ctree = ctree.mod.edges_set_node_heights(heights)
-                    yield ctree, sum(forest[i] for i in forest)
-
-                cnewick = newick
-                ctree = tree
-                ctopo = topo
-                forest = {ctree: length}
-                # logger.debug(f"first tree {length}")
-
-            else:
-                # logger.debug(f"tree-change {length}")
-                forest[tree] = length
-                ctree = tree
+    rasyncs = {}
+    with ProcessPoolExecutor(max_workers=nproc) as pool:
+        # treat each locus at a time to skip last tree
+        # in a locus that is cut-off at its ending.
+        for lidx, ldf in model.df.groupby("locus"):
+            rasyncs[lidx] = pool.submit(subfunc, ldf)
+    gspans, tspans, tidxs, trees = zip(*[rasyncs[i].result() for i in rasyncs])
+    gspans = np.concatenate(gspans, axis=0)
+    tspans = np.concatenate(tspans, axis=0)
+    return gspans, tspans, tidxs, trees
 
 
-def iter_topos_from_trees(trees: Sequence[ToyTree]) -> Iterator[ToyTree]:
-    """Returns the genealogy at each topology change."""
-
-    # initial tree
-    current = trees[0]
-    cidx = current.get_topology_id(include_root=True)
-    tree_bunch = [current]
-
-    # iterate over genealogies
-    for gtree in trees[1:]:
-        nidx = gtree.get_topology_id(include_root=True)
-        if cidx != nidx:
-            yield current
-            current = gtree
-            cidx = nidx
-            tree_bunch = [gtree]
-        else:
-            tree_bunch.append(gtree)
-
-
-def get_topology_interval_lengths(
-    model: ipcoal.Model,
-    locus: Optional[int] = None,
-) -> np.ndarray:
-    """Return an array of genealogical topology lengths.
-
-    Parameters
-    ----------
-    model: ipcoal.Model
-        A Model object that has simulated data in its `.df` attribute.
+def subfunc(data):
+    """Remote function called by get_waiting...
     """
-    return np.array([i[1] for i in iter_topos_and_spans_from_model(model)])
+    trees = []
+    tree_spans = []
+    topo_idxs = []
+    topo_spans = []
+    intervals = []
+    gidx = 0
+    tidx = 0
+
+    iterator = data.iterrows()
+    _, row = next(iterator)
+    ospan, otree = row.nbps, toytree.tree(row.genealogy)
+    otid = otree.get_topology_id(include_root=True)
+
+    # iterate over all subsequent trees
+    for (_, row) in iterator:
+
+        # parse new interval
+        nspan, ntree = row.nbps, toytree.tree(row.genealogy)
+
+        # counter of current interval
+        gidx += 1
+
+        # store the last tree and span
+        tree_spans.append(ospan)
+        trees.append(otree)
+        intervals.append(ospan)
+
+        # get id of new tree
+        ntid = ntree.get_topology_id(include_root=True)
+
+        # if topo change occurred store last tree
+        if otid != ntid:
+            # store index of otree and advance counter
+            topo_idxs.append(tidx)
+            tidx = gidx
+
+            # store span since old tree
+            topo_spans.append(sum(intervals))
+            intervals = []
+
+        otid = ntid
+        ospan = nspan
+        otree = ntree
+    return np.array(tree_spans), np.array(topo_spans), np.array(topo_idxs), trees
+
+
+# def iter_topos_and_spans_from_model(
+#     model: ipcoal.Model,
+#     weighted_node_heights: bool = False,
+# ) -> Iterator[ToyTree]:
+#     """...
+
+#     weighted_node_heights: bool
+#         Not currently working, negative branch lengths can occur.
+#     """
+#     cnewick = None
+#     ctree = None
+#     ctopo = None
+#     forest = {}
+
+#     # iterate over trees
+#     idata = zip(model.df.genealogy, model.df.nbps)
+#     for tidx, (newick, length) in enumerate(idata):
+
+#         # load first tree
+#         if cnewick is None:
+#             cnewick = newick
+#             ctree = toytree.tree(newick)
+#             ctopo = ctree.get_topology_id(include_root=True)
+#             forest[ctree] = length
+#             # logger.debug(f"first tree {length}")
+#             continue
+
+#         # newick str did not change (invisible recomb) just add length
+#         # to the last stored tree.
+#         if newick == cnewick:
+#             forest[ctree] += length
+#             # logger.debug(f"no-change {length}")
+#             continue
+
+#         # newick str changed, check if topology changed. If not, store
+#         # the last tree and its length to forest, and update current.
+#         else:
+#             tree = toytree.tree(newick)
+#             topo = tree.get_topology_id(include_root=True)
+#             if topo != ctopo:
+#                 # logger.debug(f"*topo-change -> {sum(forest[i] for i in forest)}")
+#                 if not weighted_node_heights:
+#                     yield ctree, sum(forest[i] for i in forest)
+#                 else:
+#                     heights = {}
+#                     w = [forest[i] for i in forest]
+
+#                     # cannot use idx labels here, must use anc names...
+#                     for nidx in range(ctree.ntips, ctree.nnodes):
+#                         hnodes = [t.get_mrca_node(*ctree[nidx].get_leaf_names()) for t in forest]
+#                         h = [i.height for i in hnodes]
+#                         height = np.average(h, weights=w)
+#                         # do not allow averaging to cause negative height
+#                         minh = max([heights.get(i._idx, 0) for i in ctree[nidx].children])
+#                         if height <= minh:
+#                             height = minh + 1
+#                         heights[nidx] = height
+#                     ctree = ctree.mod.edges_set_node_heights(heights)
+#                     yield ctree, sum(forest[i] for i in forest)
+
+#                 cnewick = newick
+#                 ctree = tree
+#                 ctopo = topo
+#                 forest = {ctree: length}
+#                 # logger.debug(f"first tree {length}")
+
+#             else:
+#                 # logger.debug(f"tree-change {length}")
+#                 forest[tree] = length
+#                 ctree = tree
+
+
+# def iter_topos_from_trees(trees: Sequence[ToyTree]) -> Iterator[ToyTree]:
+#     """Returns the genealogy at each topology change."""
+
+#     # initial tree
+#     current = trees[0]
+#     cidx = current.get_topology_id(include_root=True)
+#     tree_bunch = [current]
+
+#     # iterate over genealogies
+#     for gtree in trees[1:]:
+#         nidx = gtree.get_topology_id(include_root=True)
+#         if cidx != nidx:
+#             yield current
+#             current = gtree
+#             cidx = nidx
+#             tree_bunch = [gtree]
+#         else:
+#             tree_bunch.append(gtree)
+
+
+# def get_topology_interval_lengths(
+#     model: ipcoal.Model,
+#     locus: Optional[int] = None,
+# ) -> np.ndarray:
+#     """Return an array of genealogical topology lengths.
+
+#     Parameters
+#     ----------
+#     model: ipcoal.Model
+#         A Model object that has simulated data in its `.df` attribute.
+#     """
+#     return np.array([i[1] for i in iter_topos_and_spans_from_model(model)])
 
 
 if __name__ == "__main__":
 
     ipcoal.set_log_level("DEBUG")
     MODEL = ipcoal.Model(Ne=100_000, nsamples=5, seed_trees=333)
-    MODEL.sim_trees(1, 80000)
+    MODEL.sim_trees(2, 50_000)
     print(MODEL.df.head())
 
-    i0 = iter_topos_and_spans_from_model(MODEL, True)
-    i1 = iter_topos_from_trees(toytree.mtree(MODEL.df.genealogy))
+    # i0 = iter_topos_and_spans_from_model(MODEL, True)
+    # i1 = iter_topos_from_trees(toytree.mtree(MODEL.df.genealogy))
 
-    for (i, dist), j in zip(i0, i1):
-        print(i.distance.get_treedist_rf(j), dist)
+    # i1 = iter_spans_and_trees_from_model(MODEL)
+    # i2 = iter_spans_and_topos_from_model(MODEL)
 
+    # for i, j in zip(i1, i2):
+    #     print(i[0], i[1])
+    #     print(j[0], j[1])
+
+    print(get_waiting_distance_data_from_model(MODEL))
+    print(new_get_waiting_distance_data_from_model(MODEL))
     # c0, _, _ = gtrees[0].draw()
     # c1, _, _ = gtrees[1].draw()
     # c2, _, _ = gtrees[2].draw()

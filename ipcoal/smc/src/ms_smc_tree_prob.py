@@ -7,10 +7,9 @@ and tree-unchanged probabilities and waiting distances from data
 that has been pre-organized into arrays using a TreeEmbedding class
 object. The functions are jit-compiled and so run much much faster
 than the didactic functions that take ToyTrees as input.
-
-Note: Ne in TreeEmbedding emb arrays are stored as 2 * diploid Ne.
 """
 
+from typing import Optional
 import numpy as np
 from loguru import logger
 from numba import njit, prange
@@ -136,7 +135,7 @@ def get_prob_tree_unchanged_given_b_from_arrays(
 #####################################################################
 
 
-@njit
+@njit(parallel=True)
 def get_prob_tree_unchanged_from_arrays(
     gemb: np.ndarray,
     genc: np.ndarray,
@@ -164,7 +163,9 @@ def get_prob_tree_unchanged_from_arrays(
     """
     # traverse over all edges of the genealogy
     total_prob = 0
-    for bidx, blen in enumerate(barr):
+    for bidx in prange(barr.size):
+        # for bidx, blen in enumerate(barr):
+        blen = barr[bidx]
         # get P(tree-unchanged | S, G, b)
         prob = get_prob_tree_unchanged_given_b_from_arrays(gemb, genc, bidx=bidx)
         # contribute to total probability normalized by prop edge len
@@ -204,7 +205,7 @@ def get_prob_tree_changed_from_arrays(
 #####################################################################
 
 
-@njit(parallel=True)
+@njit  # (parallel=True)
 def get_tree_unchanged_lambdas(
     emb: np.ndarray,
     enc: np.ndarray,
@@ -212,6 +213,7 @@ def get_tree_unchanged_lambdas(
     sarr: np.ndarray,
     rarr: np.ndarray,  # placeholder
     recombination_rate: float,
+    idxs: np.ndarray,
 ) -> np.ndarray:
     """Return LAMBDA rate parameters for waiting distance prob. density.
 
@@ -233,12 +235,17 @@ def get_tree_unchanged_lambdas(
         Placeholder here. Not used.
     recombination_rate: float
         The per-site per-generation recombination rate.
+    idxs: np.ndarray
+        An int array of the indices in the embedding array to use. This
+        can be used to subselect topo-changes from an array with all
+        events, or tree-change events in it. Default is usually
+        idxs=np.arange(emb.shape[0])
     """
-    lambdas = np.zeros(emb.shape[0], dtype=np.float64)
+    lambdas = np.zeros(idxs.size, dtype=np.float64)
 
     # use numba parallel to iterate over genealogies
     # pylint-disable: not-an-iterable
-    for gidx in prange(emb.shape[0]):
+    for idx, gidx in enumerate(idxs):
         gemb = emb[gidx]
         genc = enc[gidx]
         blens = barr[gidx]
@@ -250,7 +257,7 @@ def get_tree_unchanged_lambdas(
     return lambdas
 
 
-@njit(parallel=True)
+@njit  # (parallel=True)
 def get_tree_changed_lambdas(
     emb: np.ndarray,
     enc: np.ndarray,
@@ -258,6 +265,7 @@ def get_tree_changed_lambdas(
     sarr: np.ndarray,
     rarr: np.ndarray,  # placeholder
     recombination_rate: float,
+    idxs: np.ndarray,
 ) -> np.ndarray:
     """Return LAMBDA rate parameters for waiting distance prob. density.
 
@@ -279,12 +287,17 @@ def get_tree_changed_lambdas(
         Placeholder here. Not used.
     recombination_rate: float
         The per-site per-generation recombination rate.
+    idxs: np.ndarray
+        An int array of the indices in the embedding array to use. This
+        can be used to subselect topo-changes from an array with all
+        events, or tree-change events in it. Default is usually
+        idxs=np.arange(emb.shape[0])
     """
-    lambdas = np.zeros(emb.shape[0], dtype=np.float64)
+    lambdas = np.zeros(idxs.size, dtype=np.float64)
 
     # use numba parallel to iterate over genealogies
     # pylint-disable: not-an-iterable
-    for gidx in prange(emb.shape[0]):
+    for idx, gidx in enumerate(idxs):
         gemb = emb[gidx]
         genc = enc[gidx]
         blens = barr[gidx]
@@ -347,6 +360,9 @@ if __name__ == "__main__":
 
     p = get_prob_tree_unchanged_from_arrays(emb[0], enc[0], barr[0], sarr[0])
     print(f"Figure S6 Prob(tree-unchanged | S, G) = {p:.4f}\n")
+
+    lambdas = get_tree_unchanged_lambdas(emb, enc, barr, sarr, rarr, 2e-9, np.arange(1))
+    print(lambdas)
 
     raise SystemExit(0)
 
