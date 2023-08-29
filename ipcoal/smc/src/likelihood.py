@@ -106,6 +106,8 @@ def get_ms_smc_loglik_from_embedding(
 
     # get logpdf of observed waiting distances given rates (lambdas)
     logliks = stats.expon.logpdf(scale=1 / rates, x=lengths)
+
+    # return as neg sum loglik
     return -np.sum(logliks)
 
 
@@ -323,7 +325,6 @@ def get_ms_smc_loglik(
 #     # assert ts.ancestry_model == "hudson"  # don't know how to check.
 
 
-
 if __name__ == "__main__":
 
     import toytree
@@ -346,7 +347,6 @@ if __name__ == "__main__":
     model.sim_trees(NLOCI, NSITES)
     imap = model.get_imap_dict()
 
-    
     genealogies = toytree.mtree(model.df.genealogy)
     glens = model.df.nbps.values
     G = TreeEmbedding(model.tree, genealogies, imap, nproc=20)
@@ -363,9 +363,7 @@ if __name__ == "__main__":
         print(f"{val:.2e} {loglik:.2f} {tloglik:.2f} {wloglik:.2f}")
     raise SystemExit(0)
 
-
     ############################################################
-
 
     raise SystemExit(0)
 
