@@ -53,7 +53,7 @@ def get_prob_tree_unchanged_given_b_and_tr_from_arrays(
     bmask = genc[:, bidx]
 
     # subselect array intervals by time of recombination
-    in_or_above_t = time < gemb[:, 1]  # tr occurs before interval end
+    in_or_above_t = (time < gemb[:, 1]) & (time >= gemb[:, 0])  # tr occurs before interval end
 
     # get intervals on b above or include time tr
     bidxs = (bmask & in_or_above_t).nonzero()[0]
@@ -65,7 +65,8 @@ def get_prob_tree_unchanged_given_b_and_tr_from_arrays(
 
     # (nedges / 2neff) * time
     inner = (gemb[tidx, 4] / (2 * gemb[tidx, 3])) * time
-    inner = np.exp(inner) if inner < 100 else 1e15
+    # print(gemb[tidx, 4], gemb[tidx, 3], time, inner)
+    inner = np.exp(inner)  # if inner < 100 else 1e15
 
     # (1 / nedges)
     term1 = (1 / gemb[tidx, 4])
@@ -119,16 +120,19 @@ def get_prob_tree_unchanged_given_b_from_arrays(
         # setting it to a very large value seems asymptotically OK.
         estop = (nedges / neff2) * gemb[idx, 1]
         estart = (nedges / neff2) * gemb[idx, 0]
-        if estop > 100:
-            term2_inner = 1e15
-            # logger.warning("overflow")  # no-jit
-        else:
-            term2_inner = np.exp(estop) - np.exp(estart)
+        # if estop > 100:
+        #     term2_inner = 1e15
+        # #     print("overflow", bidx, nedges, neff2, gemb[idx, 1], estop, np.exp(estop))
+        # #     # logger.warning("overflow")  # no-jit
+        # else:
+        #     term2_inner = np.exp(estop) - np.exp(estart)
+        term2_inner = np.exp(estop) - np.exp(estart)
 
         # pij component
         jidxs = bidxs[bidxs >= idx]
         term3 = _get_fij_set_sum(gemb, jidxs, jidxs)
         sumval += term1 + (term2_inner * term2_outer * term3)
+        # print(bidx, sumval)
     return (1 / (tbu - tbl)) * sumval
 
 

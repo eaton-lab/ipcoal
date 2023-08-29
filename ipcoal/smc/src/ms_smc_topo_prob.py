@@ -59,7 +59,11 @@ def get_prob_topo_unchanged_given_b_and_tr_from_arrays(
     benc = genc[:, bidx] & (time < gemb[:, 1])
     bidxs = benc.nonzero()[0]
 
-    # get intervals containing both b and sister above time tr
+    # require time occurs on branch b (tr >= interval start)
+    if not (benc & (time >= gemb[:, 0])).sum():
+        raise ValueError("No interval exists on branch bidx at time tr.")
+
+    # get intervals containing both b and sister above time t_r
     senc = genc[:, sidx]
     sidxs = (benc & senc).nonzero()[0]
 
@@ -75,7 +79,8 @@ def get_prob_topo_unchanged_given_b_and_tr_from_arrays(
 
     # exp(nedges / 2neff) * tr)
     inner = (gemb[idx, 4] / (2 * gemb[idx, 3])) * time
-    inner = np.exp(inner) if inner < 100 else 1e15
+    # inner = np.exp(inner) if inner < 100 else 1e15
+    inner = np.exp(inner)
 
     # (1 / nedges)
     term1 = (1 / gemb[idx, 4])
@@ -146,7 +151,7 @@ def get_prob_topo_unchanged_given_b_from_arrays(
     bidxs = benc.nonzero()[0]
     btab = gemb[benc, :]
 
-    # get intervals containing both b and b' (above t_m)
+    # get intervals containing both b and b'
     senc = genc[:, sidx]
     midxs = (benc & senc).nonzero()[0]
 
@@ -257,6 +262,15 @@ def get_topo_changed_lambdas(
     return lambdas
 
 
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
 ######################################################################
 
 @njit

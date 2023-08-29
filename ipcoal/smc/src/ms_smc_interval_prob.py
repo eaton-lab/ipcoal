@@ -77,8 +77,12 @@ def _get_fij_set_sum(emb: np.ndarray, idxs: np.ndarray, jdxs: np.ndarray) -> flo
 
 @njit
 def _get_pb1_set_sum(emb: np.ndarray, bidxs: np.ndarray, midxs: np.ndarray, fidxs: np.ndarray):
-    """
+    """Return summation over intervals from 0-M for prob topo-unchanged.
 
+    emb: Embedding array of intervals
+    bidxs: interval indices involving branch b
+    midxs: interval indices involving branch b and b' (sister)
+    fidxs: interval indices involving branch b or c (parent)
     """
     pbval = 0
 
@@ -93,10 +97,11 @@ def _get_pb1_set_sum(emb: np.ndarray, bidxs: np.ndarray, midxs: np.ndarray, fidx
         nedges = emb[idx, 4]
         estop = (nedges / neff2) * emb[idx, 1]
         estart = (nedges / neff2) * emb[idx, 0]
-        if estop > 100:
-            term1 = 1e15
-        else:
-            term1 = neff2 * (np.exp(estop) - np.exp(estart))
+        # if estop > 100:
+        #     term1 = 1e15
+        # else:
+        #     term1 = neff2 * (np.exp(estop) - np.exp(estart))
+        term1 = neff2 * (np.exp(estop) - np.exp(estart))
 
         # for fidxs at and above idx
         term2a = _get_fij_set_sum(emb, fidxs[fidxs >= idx], fidxs)
@@ -112,8 +117,12 @@ def _get_pb1_set_sum(emb: np.ndarray, bidxs: np.ndarray, midxs: np.ndarray, fidx
 
 @njit
 def _get_pb2_set_sum(emb: np.ndarray, bidxs: np.ndarray, midxs: np.ndarray, fidxs: np.ndarray):
-    """
+    """Return summation over intervals from 0-M for prob topo-unchanged.
 
+    emb: Embedding array of intervals
+    bidxs: interval indices involving branch b
+    midxs: interval indices involving branch b and b' (sister)
+    fidxs: interval indices involving branch b or c (parent)
     """
     pbval = 0
 
@@ -127,10 +136,11 @@ def _get_pb2_set_sum(emb: np.ndarray, bidxs: np.ndarray, midxs: np.ndarray, fidx
         neff2 = 2 * emb[idx, 3]
         estop = (emb[idx, 4] / neff2) * emb[idx, 1]
         estart = (emb[idx, 4] / neff2) * emb[idx, 0]
-        if estop > 100:
-            term1 = 1e15
-        else:
-            term1 = neff2 * (np.exp(estop) - np.exp(estart))
+        # if estop > 100:
+        #     term1 = 1e15
+        # else:
+        #     term1 = neff2 * (np.exp(estop) - np.exp(estart))
+        term1 = neff2 * (np.exp(estop) - np.exp(estart))
 
         # for fidxs at and above idx
         term2a = _get_fij_set_sum(emb, fidxs[fidxs >= idx], bidxs)
@@ -145,6 +155,17 @@ def _get_pb2_set_sum(emb: np.ndarray, bidxs: np.ndarray, midxs: np.ndarray, fidx
 
 
 # OLDER and SLOWER CODE
+#############################################################################
+#############################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
 
 @njit
 def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
