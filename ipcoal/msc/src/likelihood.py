@@ -13,7 +13,7 @@ References
 - ... (...) "STELLS-mod..."
 """
 
-from typing import Dict, Sequence
+from typing import Dict, Sequence, Optional
 import numpy as np
 from numba import njit, prange
 from loguru import logger
@@ -59,9 +59,30 @@ def get_msc_loglik(
 
 
 @njit(parallel=True)
-def get_msc_loglik_from_embedding(embedding: np.ndarray) -> float:
+def get_msc_loglik_from_embedding(
+    embedding: np.ndarray,
+    dists: Optional[np.ndarray] = None,
+) -> float:
     """Return sum -loglik of genealogies embedded in a species tree.
+
+    Parameters
+    ----------
+    embedding: np.ndarray
+        An embedding array with genealogy and species tree information.
+        generated using `ipcoal.msc.get_genealogy_embedding_arrays`.
+    dists: np.ndarray or None
+        An int or float array with the length of chromosome that each
+        gene tree represents to use as a weight on the log-likelihood.
     """
+    # get weights for trees based on the length of a locus that they
+    # take up. By default we typically assume each locus is independent
+    # and equally weighted. However, in whole-genome analyses we can
+    # weight each by its proportion of sequence length.
+    if dists is None:
+        dists = np.ones(embedding.shape[0], dtype=np.float64)
+    else:
+        dists = dists / dists.sum()
+
     ntrees = embedding.shape[0]
     nspecies = int(embedding[0, -1, 2])
     # logliks = np.zeros(ntrees, dtype=np.float64)
@@ -102,9 +123,11 @@ def get_msc_loglik_from_embedding(embedding: np.ndarray) -> float:
             if prob > 0:
                 loglik += np.log(prob)
             else:
-                # logger.warning(("MSC", prob))
                 loglik += -np.inf
-        sum_neg_loglik += -loglik
+
+        # weight loglik by its proportion of length
+        sum_neg_loglik += -loglik * dists[gidx] * dists.size
+        # sum_neg_loglik += -loglik
     return sum_neg_loglik
     #     logliks[gidx] = loglik
     # return -logliks.sum()
@@ -155,23 +178,25 @@ def test_msc(neff: float = 1e5, nsamples: int = 4, nloci: int = 500, nsites: int
 
     # get (sptree, gtrees, imap)
     sptree = toytree.rtree.imbtree(ntips=5, treeheight=1e6)
+    sptree.set_node_data("Ne", {0: 1e5, 1: 2e5, 3: 3e5}, default=2.5e5)
     model = ipcoal.Model(sptree, Ne=neff, nsamples=nsamples)
     model.sim_trees(nloci, nsites, nproc=4)
     imap = model.get_imap_dict()
-    logger.warning("simulated trees")
+    logger.info("simulated trees")
 
     # get embedding table
     emb, enc = get_genealogy_embedding_arrays(model.tree, model.df.genealogy, imap)
-    logger.warning("embedded trees")
+    logger.info("embedded trees")
 
     # get loglik across a range of test values
     test_values = np.logspace(np.log10(neff) - 1, np.log10(neff) + 1, 21)
     logliks = []
     for val in test_values:
         emb[:, :, 3] = val
-        loglik = get_msc_loglik_from_embedding(emb)
+        loglik = get_msc_loglik_from_embedding(emb, model.df.nbps.values)
         logliks.append(loglik)
-        logger.warning(f"fit value={val:.0f}: {loglik:.5e}")
+        # logger.info(f"fit value={val:.0f}: {loglik:.5e}")
+        logger.info(f"fit value={val:.0f}: {loglik:.5e}")
 
     canvas, axes, mark = toyplot.plot(
         test_values, logliks,
@@ -187,7 +212,8 @@ if __name__ == "__main__":
     import ipcoal
     ipcoal.set_log_level("INFO")
     # test_kingman(neff=1e6, nsamples=10, ntrees=500)
-    test_msc(neff=1e6, nsamples=5, nloci=5000, nsites=1)
+    # test_msc(neff=1e6, nsamples=5, nloci=5000, nsites=1)
+    test_msc(neff=1e6, nsamples=5, nloci=2, nsites=1e5)
     # test_msc(neff=1e6, nsamples=5, nloci=10, nsites=1e5)
 
     # SPTREE = toytree.rtree.baltree(2, treeheight=1e6)
