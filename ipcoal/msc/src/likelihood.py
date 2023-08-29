@@ -102,7 +102,8 @@ def get_msc_loglik_from_embedding(embedding: np.ndarray) -> float:
             if prob > 0:
                 loglik += np.log(prob)
             else:
-                loglik += np.inf
+                # logger.warning(("MSC", prob))
+                loglik += -np.inf
         sum_neg_loglik += -loglik
     return sum_neg_loglik
     #     logliks[gidx] = loglik
@@ -185,8 +186,8 @@ if __name__ == "__main__":
 
     import ipcoal
     ipcoal.set_log_level("INFO")
-    test_kingman(neff=1e6, nsamples=10, ntrees=500)
-    # test_msc(neff=1e6, nsamples=5, nloci=5000, nsites=1)
+    # test_kingman(neff=1e6, nsamples=10, ntrees=500)
+    test_msc(neff=1e6, nsamples=5, nloci=5000, nsites=1)
     # test_msc(neff=1e6, nsamples=5, nloci=10, nsites=1e5)
 
     # SPTREE = toytree.rtree.baltree(2, treeheight=1e6)
