@@ -200,7 +200,8 @@ class Snaq:
             comm = proc.communicate()
             if proc.returncode:
                 logger.error(f"SNAQ Error:\n{comm[0].decode()}")
-            logger.log(log_level, f"{comm[0].decode()}")
+            else:
+                logger.debug(f"{comm[0].decode()}")
 
     def _get_starting_net(self, net_in: Optional[Union[Path, toytree.ToyTree]]) -> str:
         """..."""
