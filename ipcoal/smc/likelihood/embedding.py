@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import toytree
 from loguru import logger
-from ipcoal.smc.ms_smc import get_genealogy_embedding_table
+from ipcoal.msc.src.embedding import get_genealogy_embedding_table, _get_fast_genealogy_embedding_table
 from ipcoal.smc.likelihood.utils import iter_unique_topologies_from_genealogies
 
 logger = logger.bind(name="ipcoal")
@@ -157,7 +157,7 @@ def get_multi_genealogy_embedding_array(
     """Return ndarray of genealogy embedding."""
     arrs = []
     for gidx, gtree in enumerate(genealogies):
-        arr = get_fast_genealogy_embedding_table(
+        arr = _get_fast_genealogy_embedding_table(
             species_tree, gtree, imap, encode=True, gidx=gidx, df=False)
         arrs.append(arr)
     return np.vstack(arrs)
