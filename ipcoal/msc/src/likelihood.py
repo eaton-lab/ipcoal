@@ -74,18 +74,17 @@ def get_msc_loglik_from_embedding(
         An int or float array with the length of chromosome that each
         gene tree represents to use as a weight on the log-likelihood.
     """
+    ntrees = embedding.shape[0]
+    nspecies = int(embedding[0, -1, 2])
+
     # get weights for trees based on the length of a locus that they
     # take up. By default we typically assume each locus is independent
     # and equally weighted. However, in whole-genome analyses we can
     # weight each by its proportion of sequence length.
     if dists is None:
-        dists = np.ones(embedding.shape[0], dtype=np.float64)
+        weights = np.ones(ntrees, dtype=np.float64) / ntrees
     else:
-        dists = dists / dists.sum()
-
-    ntrees = embedding.shape[0]
-    nspecies = int(embedding[0, -1, 2])
-    # logliks = np.zeros(ntrees, dtype=np.float64)
+        weights = dists / dists.sum()
 
     # iterate over gtrees
     sum_neg_loglik = 0
@@ -126,9 +125,9 @@ def get_msc_loglik_from_embedding(
                 loglik += -np.inf
 
         # weight loglik by its proportion of length
-        sum_neg_loglik += -loglik * dists[gidx] * dists.size
+        sum_neg_loglik += -loglik * weights[gidx]   # * dists.size
         # sum_neg_loglik += -loglik
-    return sum_neg_loglik
+    return sum_neg_loglik * ntrees
     #     logliks[gidx] = loglik
     # return -logliks.sum()
 
@@ -212,8 +211,8 @@ if __name__ == "__main__":
     import ipcoal
     ipcoal.set_log_level("INFO")
     # test_kingman(neff=1e6, nsamples=10, ntrees=500)
-    # test_msc(neff=1e6, nsamples=5, nloci=5000, nsites=1)
-    test_msc(neff=1e6, nsamples=5, nloci=2, nsites=1e5)
+    test_msc(neff=1e6, nsamples=5, nloci=5000, nsites=1)
+    test_msc(neff=1e6, nsamples=5, nloci=5, nsites=1e3)
     # test_msc(neff=1e6, nsamples=5, nloci=10, nsites=1e5)
 
     # SPTREE = toytree.rtree.baltree(2, treeheight=1e6)
