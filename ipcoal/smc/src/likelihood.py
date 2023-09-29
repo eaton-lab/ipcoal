@@ -53,6 +53,7 @@ def get_ms_smc_loglik_from_embedding(
     lengths: np.ndarray,
     event_type: int = 1,
     idxs: Optional[np.ndarray] = None,
+    normalize: bool = False,
 ) -> float:
     """Return -loglik of observed waiting distances between specific
     recombination event-types given a species tree and genealogies.
@@ -73,6 +74,12 @@ def get_ms_smc_loglik_from_embedding(
         An optional int array to select a subset of trees from the
         Embedding. This allows using the same embedding table for tree
         and topology changes by subsetting the topology-change indices.
+    normalize: bool
+        If True the log-likelhood of observing each interval distance
+        is weighted by the proportion of length of the ARG that it
+        represents. This arg should be True when comparing different
+        ARGs for the same model. It should be False when comparing
+        different models to fit the same ARG.
 
     Examples
     --------
@@ -106,8 +113,26 @@ def get_ms_smc_loglik_from_embedding(
 
     # get logpdf of observed waiting distances given rates (lambdas)
     logliks = stats.expon.logpdf(scale=1 / rates, x=lengths)
-
+    # logger.warning(f"{1/rates[:5]}, {lengths[:5]}, {logliks[:5]}")
+    # weight each loglik by its proportion of the length of the ARG
+    # wlogliks = logliks / (lengths / lengths.sum())
+    # logger.warning(f"{-np.sum(logliks):.7e} | {-np.sum(wlogliks) * lengths.size}")
+    # logger.warning([logliks[:5], lengths[:5], logliks[:5] * lengths[:5]])
     # return as neg sum loglik
+
+    # when normalized we are comparing ARGs of the same total length
+    # but composed of different sub interval lengths, so we need to
+    # ask how well the data fit our model per unit length, otherwise
+    # models that split into more smaller intervals are always better.
+    if normalize:
+        logliks *= (lengths / lengths.sum())
+        return -np.sum(logliks)  # do not use * lengths.size here
+
+    # when not normalized we are comparing the exact same ARGs under
+    # different species tree models. We do not want to normalize per
+    # unit length, because that would always favor models with lower Ne,
+    # since there are more small than large intervals in an expon dist
+    # by definition.
     return -np.sum(logliks)
 
 
@@ -232,6 +257,7 @@ def get_ms_smc_loglik(
     lengths: np.ndarray,
     event_type: int = 1,
     idxs: Optional[np.ndarray] = None,
+    normalize: bool = False,
 ) -> float:
     """Return -loglik of tree-sequence waiting distances between
     tree change events given species tree parameters.
@@ -255,6 +281,12 @@ def get_ms_smc_loglik(
         0 = any recombination event.
         1 = tree-change event.
         2 = topology-change event.
+    normalize: bool
+        If True the log-likelhood of observing each interval distance
+        is weighted by the proportion of length of the ARG that it
+        represents. This arg should be True when comparing different
+        ARGs for the same model. It should be False when comparing
+        different models to fit the same ARG.
 
     See Also
     ---------
@@ -273,13 +305,23 @@ def get_ms_smc_loglik(
         genealogies = [genealogies]
     # ensure lengths is an array
     lengths = np.array(lengths)
+
     # ensure same size lengths and trees
-    assert len(lengths) == len(genealogies)
+    if idxs is not None:
+        assert len(idxs) == len(lengths), "N trees must match N waiting distances"
+    else:
+        assert len(lengths) == len(genealogies), "N trees must match N waiting distances"
 
     # get embedding and calculate likelihood
     embedding = TreeEmbedding(species_tree, genealogies, imap)
     return get_ms_smc_loglik_from_embedding(
-        embedding, recombination_rate, lengths, event_type, idxs)
+        embedding,
+        recombination_rate,
+        lengths,
+        event_type,
+        idxs,
+        normalize,
+    )
 
 
 # def get_simple_waiting_distance_likelihood(
@@ -330,61 +372,83 @@ if __name__ == "__main__":
     import toytree
     import ipcoal
     from ipcoal.msc import get_msc_loglik_from_embedding
+    from ipcoal.smc.src.utils import get_waiting_distance_data_from_model
 
     ############################################################
     RECOMB = 2e-9
     SEED = 123
-    NEFF = 1e5
+    NEFF = 2e5
     ROOT_HEIGHT = 5e5  # 1e6
     NSPECIES = 2
-    NSAMPLES = 8
-    NSITES = 1e5
-    NLOCI = 10
+    NSAMPLES = 4
+    NSITES = 2e6
+    NLOCI = 50
 
     sptree = toytree.rtree.baltree(NSPECIES, treeheight=ROOT_HEIGHT)
-    sptree.set_node_data("Ne", {0: 1e5, 1: 2e5, 2: 2e5}, inplace=True)
-    model = ipcoal.Model(sptree, nsamples=NSAMPLES, recomb=RECOMB, seed_trees=SEED, discrete_genome=False, ancestry_model="smc_prime")
+    sptree.set_node_data("Ne", {0: NEFF, 1: 2e5, 2: 2e5}, inplace=True)
+    model = ipcoal.Model(
+        sptree, nsamples=NSAMPLES, recomb=RECOMB, seed_trees=SEED,
+        discrete_genome=False, ancestry_model="smc_prime")
     model.sim_trees(NLOCI, NSITES)
     imap = model.get_imap_dict()
 
-    genealogies = toytree.mtree(model.df.genealogy)
-    glens = model.df.nbps.values
-    G = TreeEmbedding(model.tree, genealogies, imap, nproc=20)
-    print(len(genealogies), "gtrees")
+    tree_spans, topo_spans, topo_idxs, gtrees = get_waiting_distance_data_from_model(model)
+    print(len(gtrees))
 
-    values = np.linspace(10_000, 400_000, 31)
+    # genealogies = toytree.mtree(model.df.genealogy)
+    # glens = model.df.nbps.values
+    # G = TreeEmbedding(model.tree, genealogies, imap, nproc=20)
+    G = TreeEmbedding(model.tree, gtrees, imap, nproc=6)
+    # print(len(genealogies), "gtrees")
+
+    TOPO = True
+    if TOPO:
+        etype = 2
+        spans = topo_spans
+        tidxs = topo_idxs
+    else:
+        etype = 1
+        spans = tree_spans
+        tidxs = model.df.index.values
+
+    values = np.linspace(10_000, 400_000, 32)
     test_values = np.logspace(np.log10(NEFF) - 1, np.log10(NEFF) + 1, 20)
+    values = sorted(list(values) + [NEFF])
     for val in values:
-        _update_neffs(G.emb, np.array([val, 2e5, 2e5]))
-        tloglik = get_msc_loglik_from_embedding(G.emb)
-        wloglik = get_ms_smc_loglik_from_embedding(G, RECOMB, glens, event_type=1)
+        G._update_neffs(np.array([val, 2e5, 2e5]))
+        mloglik1 = get_msc_loglik_from_embedding(G.emb, tree_spans)
+        mloglik2 = get_msc_loglik_from_embedding(G.emb)
+        gloglik = get_ms_smc_loglik_from_embedding(G, RECOMB, tree_spans, event_type=1)
+        tloglik = get_ms_smc_loglik_from_embedding(G, RECOMB, topo_spans, event_type=2, idxs=topo_idxs)
         # wloglik = get_mssmc_loglik_from_embedding(G, RECOMB, glens, event_type=2)
-        loglik = tloglik + wloglik
-        print(f"{val:.2e} {loglik:.2f} {tloglik:.2f} {wloglik:.2f}")
+        xloglik = gloglik + tloglik
+        loglik1 = mloglik1 + gloglik + tloglik
+        loglik2 = mloglik2 + gloglik + tloglik
+        print(f"{val:.3e} | {loglik1:.4f} {loglik2:.4f} | {mloglik1:.4f} {mloglik2:.4f} | {gloglik:.4f} {tloglik:.4f} | {xloglik:.4f}")
     raise SystemExit(0)
 
     ############################################################
 
-    raise SystemExit(0)
+    # raise SystemExit(0)
 
-    sptree = toytree.rtree.imbtree(ntips=4, treeheight=1e6)
-    model = ipcoal.Model(sptree, Ne=1e5, nsamples=2, seed_trees=123)
-    model.sim_trees(2, 1e5)
-    gtrees = model.df.genealogy
-    imap = model.get_imap_dict()
+    # sptree = toytree.rtree.imbtree(ntips=4, treeheight=1e6)
+    # model = ipcoal.Model(sptree, Ne=1e5, nsamples=2, seed_trees=123)
+    # model.sim_trees(2, 1e5)
+    # gtrees = model.df.genealogy
+    # imap = model.get_imap_dict()
 
-    G = TreeEmbedding(model.tree, model.df.genealogy, imap)
-    # tree_loglik = _get_msc_loglik_from_embedding_array(G.emb)
-    # wait_loglik = get_waiting_distance_loglik(G, 1e-9, model.df.nbps.values)
+    # G = TreeEmbedding(model.tree, model.df.genealogy, imap)
+    # # tree_loglik = _get_msc_loglik_from_embedding_array(G.emb)
+    # # wait_loglik = get_waiting_distance_loglik(G, 1e-9, model.df.nbps.values)
 
-    values = np.linspace(10_000, 300_000, 31)
-    for val in values:
-        _update_neffs(G.emb, np.array([val] * sptree.nnodes))
-        tree_loglik = 0#_get_msc_loglik_from_embedding_array(G.emb)
-        wait_loglik = get_waiting_distance_loglik(G, 1e-8, model.df.nbps.values)
-        loglik = tree_loglik + wait_loglik
-        print(f"{val:.2e} {loglik:.2f} {tree_loglik:.2f} {wait_loglik:.2f}")
-    # print(table.table.iloc[:, :8])
-    # print(table.barr.shape, table.genealogies[0].nnodes)
-    # print(get_fast_tree_changed_lambda(table.earr, table.barr, table.sarr, 2e-9))
+    # values = np.linspace(10_000, 300_000, 31)
+    # for val in values:
+    #     _update_neffs(G.emb, np.array([val] * sptree.nnodes))
+    #     tree_loglik = 0#_get_msc_loglik_from_embedding_array(G.emb)
+    #     wait_loglik = get_waiting_distance_loglik(G, 1e-8, model.df.nbps.values)
+    #     loglik = tree_loglik + wait_loglik
+    #     print(f"{val:.2e} {loglik:.2f} {tree_loglik:.2f} {wait_loglik:.2f}")
+    # # print(table.table.iloc[:, :8])
+    # # print(table.barr.shape, table.genealogies[0].nnodes)
+    # # print(get_fast_tree_changed_lambda(table.earr, table.barr, table.sarr, 2e-9))
 
