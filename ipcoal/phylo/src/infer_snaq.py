@@ -193,7 +193,7 @@ class Snaq:
         logger.info(f"inferred network written to {self.network}")
 
     def _execute_script(self, log_level: str = "ERROR") -> None:
-        """..."""
+        """Run `julia script.jl` in subprocess to generate result files."""
         cmd = [str(self.path_to_julia), str(self._io_script)]
         kwargs = dict(stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
         with subprocess.Popen(cmd, **kwargs) as proc:

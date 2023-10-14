@@ -14,6 +14,8 @@ import pandas as pd
 import msprime as ms
 from msprime.mutations import mutation_model_factory
 import toytree
+from toytree.color import ColorType
+from toytree.drawing.src.draw_demography import EmbeddingPlot
 from loguru import logger
 
 from ipcoal.io.writer import Writer
@@ -480,7 +482,8 @@ class Model:
         events = []
 
         # add split events
-        for node in self.tree.traverse("levelorder"):
+        # for node in self.tree.traverse("levelorder"):
+        for node in self.tree.traverse("postorder"):
             if len(node.children) > 1:
                 events.append({
                     'type': 'split',
@@ -695,7 +698,36 @@ class Model:
             **kwargs)
         return canvas, axes, mark
 
-    def draw_demography(self, idx=None, spacer=0.25, ymax=None, **kwargs):
+    def draw_demography(
+        self,
+        idx=None,
+        # spacer=0.25,
+        container_width: int = 350,
+        container_height: int = 300,
+        container_blend: bool = False,
+        container_fill: ColorType = "black",
+        container_fill_opacity: float = 0.25,
+        container_fill_opacity_alternate: bool = True,
+        container_stroke: ColorType = "black",
+        container_stroke_opacity: float = 1.0,
+        container_stroke_width: float = 2,
+        container_root_height: Union[int, bool] = True,
+        container_interval_spacing: float = 1.5,
+        container_interval_minwidth: float = 2,
+        container_interval_maxwidth: float = 8,
+        node_fill: ColorType = "black",
+        node_fill_opacity: float = 1.0,
+        node_stroke: ColorType = None,
+        node_stroke_width: int = 1,
+        node_size: int = 5,
+        edge_stroke: ColorType = "black",
+        edge_stroke_width: int = 2,
+        edge_stroke_inherit: bool = True,
+        edge_stroke_opacity: float = 1.0,
+        edge_samples: int = 10,
+        edge_variance: float = 0.0,
+        tip_labels_size: int = 10,
+    ):
         """Return drawing of parameterized demographic model.
 
         A genealogy can also be embedded in the demographic model by
@@ -709,25 +741,89 @@ class Model:
         --------
         >>> ...
         """
-        # bail out if self.admixture_edges
-        if self.admixture_edges:
-            raise NotImplementedError(
-                "admixture_edges are not yet supported in demography drawing.")
+        if (self.df is None) and (idx is not None):
+            raise IpcoalError("You must first call a simulation method.")
+
+        # # bail out if self.admixture_edges
+        # if self.admixture_edges:
+        #     raise NotImplementedError(
+        #         "admixture_edges are not yet supported in demography drawing.")
 
         # return only the container
         if idx is None:
-            ctre = toytree.container(self.tree, idx=0, spacer=spacer, **kwargs)
+
+            if self.tree.ntips == 1:
+                gtree = toytree.rtree.coaltree(5)
+                emb = EmbeddingPlot(
+                    self.tree.treenode.Ne, gtree, None,
+                    blend=container_blend,
+                    spacing=container_interval_spacing,
+                    min_width=container_interval_minwidth,
+                    max_width=container_interval_maxwidth,
+                )
+            else:
+                imap = self.get_imap_dict()
+                if self.df is None:
+                    self.sim_trees(1)
+                    gtree = self.df.genealogy[0]
+                    self.seqs = None
+                    self.df = None
+                else:
+                    gtree = self.df.genealogy[0]
+                emb = EmbeddingPlot(
+                    self.tree, gtree, imap,
+                    blend=container_blend,
+                    spacing=container_interval_spacing,
+                    min_width=container_interval_minwidth,
+                    max_width=container_interval_maxwidth,
+                )
+                container_root_height = self.tree.treenode.height * 0.2
+            emb.add_container(
+                container_width,
+                container_height,
+                container_fill,
+                container_fill_opacity,
+                container_fill_opacity_alternate,
+                container_stroke,
+                container_stroke_opacity,
+                container_stroke_width,
+                container_root_height,
+            )
 
         # return genealogy within container
         else:
-            ctre = toytree.container(self, idx=idx, spacer=spacer, **kwargs)
-
-        # scale ymax to not require all coalescences
-        if ymax is None:
-            ctre.axes.y.domain.max = self.tree.treenode.height
-        elif isinstance(ymax, (int, float)):
-            ctre.axes.y.domain.max = ymax
-        return ctre.canvas, ctre.axes
+            if self.tree.ntips == 1:
+                sptree = self.tree.treenode.Ne
+                imap = None
+            else:
+                sptree = self.tree
+                imap = self.get_imap_dict()
+            gtree = toytree.tree(self.df.genealogy[idx])
+            emb = EmbeddingPlot(sptree, gtree, imap, blend=container_blend)
+            emb.draw(
+                container_width,
+                container_height,
+                container_fill,
+                container_fill_opacity,
+                container_fill_opacity_alternate,
+                container_stroke,
+                container_stroke_opacity,
+                container_stroke_width,
+                container_root_height,
+                node_fill,
+                node_fill_opacity,
+                node_stroke,
+                node_stroke_width,
+                node_size,
+                edge_stroke,
+                edge_stroke_width,
+                edge_stroke_inherit,
+                edge_stroke_opacity,
+                edge_samples,
+                edge_variance,
+                tip_labels_size,
+            )
+        return emb.canvas, emb.axes
 
     def draw_tree_sequence(self, **kwargs):
         """Return a toytree TreeSequence drawing."""
