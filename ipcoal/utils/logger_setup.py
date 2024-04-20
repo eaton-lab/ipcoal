@@ -2,7 +2,7 @@
 
 """Logging module.
 
-Logging module primarily used for debugging by developers, but which 
+Logging module primarily used for debugging by developers, but which
 can be turned on by users for more verbose output by calling:
 
 ipcoal.set_log_level("DEBUG")
@@ -22,6 +22,7 @@ LOGFORMAT = (
     "<level>{message}</level>"
 )
 
+
 def colorize():
     """check whether terminal/tty supports color."""
     try:
@@ -34,15 +35,17 @@ def colorize():
 
 
 LOGGERS = [0]
+
+
 def set_log_level(
-    log_level: str="INFO", 
-    log_out: Optional[io.TextIOBase]=sys.stderr,
-    log_file: Optional[Path]=None,
-    ):
+    log_level: str = "INFO",
+    log_out: Optional[io.TextIOBase] = sys.stderr,
+    log_file: Optional[Path] = None,
+):
     """Set the log level for loguru logger.
 
-    This removes default loguru handler, but leaves any others, 
-    and adds a new one that will filter to only print logs from 
+    This removes default loguru handler, but leaves any others,
+    and adds a new one that will filter to only print logs from
     ipcoal modules, which should use `logger.bind(name='ipcoal')`.
 
     Parameters
@@ -71,7 +74,7 @@ def set_log_level(
     >>> import sys
     >>> ipcoal.set_log_level("INFO", log_out=sys.stdout)
 
-    # get ipcoal logger object and send custom logging messages 
+    # get ipcoal logger object and send custom logging messages
     >>> from loguru import logger
     >>> logger = logger.bind(name="ipcoal")
     >>> logger.info("adding my own custom message to logging.")
@@ -114,3 +117,7 @@ def set_log_level(
     logger.bind(name="ipcoal").debug(
         f"ipcoal v.{ipcoal.__version__} logging enabled"
     )
+
+
+if __name__ == "__main__":
+    set_log_level("DEBUG")
