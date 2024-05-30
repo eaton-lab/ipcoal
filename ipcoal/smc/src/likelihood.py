@@ -281,6 +281,10 @@ def get_ms_smc_loglik(
         0 = any recombination event.
         1 = tree-change event.
         2 = topology-change event.
+    idxs: Optional[Sequence[int]]
+        An optional array or sequence of integers to use as an index
+        to select a subset of trees and distances from the inputs to
+        ...
     normalize: bool
         If True the log-likelhood of observing each interval distance
         is weighted by the proportion of length of the ARG that it
@@ -297,7 +301,7 @@ def get_ms_smc_loglik(
     >>> S, G, I = ipcoal.msc.get_test_data()
     >>> L = 100
     >>> R = 1e-9
-    >>> get_mssmc_loglik(S, G, I, L, R, 1)
+    >>> get_ms_smc_loglik(S, G, I, L, R, 1)
     >>> # ...
     """
     # ensure genealogies is a sequence
@@ -382,8 +386,10 @@ if __name__ == "__main__":
     NSPECIES = 2
     NSAMPLES = 4
     NSITES = 2e6
-    NLOCI = 50
+    NLOCI = 1  # 50
 
+    # simulate NLOCI x NSITES using the SMC' model so that only tree
+    # change recomb events are recorded, not invisible events.
     sptree = toytree.rtree.baltree(NSPECIES, treeheight=ROOT_HEIGHT)
     sptree.set_node_data("Ne", {0: NEFF, 1: 2e5, 2: 2e5}, inplace=True)
     model = ipcoal.Model(
@@ -392,35 +398,32 @@ if __name__ == "__main__":
     model.sim_trees(NLOCI, NSITES)
     imap = model.get_imap_dict()
 
+    # decompose simulations into data
     tree_spans, topo_spans, topo_idxs, gtrees = get_waiting_distance_data_from_model(model)
-    print(len(gtrees))
+    print(len(gtrees), gtrees[:4])
+    print(len(tree_spans), tree_spans[:4], tree_spans.dtype)
+    print(len(topo_spans), topo_spans[:4], tree_spans.dtype)
+    print(len(topo_idxs), topo_idxs[:4])
 
-    # genealogies = toytree.mtree(model.df.genealogy)
-    # glens = model.df.nbps.values
-    # G = TreeEmbedding(model.tree, genealogies, imap, nproc=20)
+    # organize SMC data into embedding tables
     G = TreeEmbedding(model.tree, gtrees, imap, nproc=6)
-    # print(len(genealogies), "gtrees")
 
-    TOPO = True
-    if TOPO:
-        etype = 2
-        spans = topo_spans
-        tidxs = topo_idxs
-    else:
-        etype = 1
-        spans = tree_spans
-        tidxs = model.df.index.values
-
+    # test over a range of Ne values where NEFF is the true value
+    # test_values = np.logspace(np.log10(NEFF) - 1, np.log10(NEFF) + 1, 20)
     values = np.linspace(10_000, 400_000, 32)
-    test_values = np.logspace(np.log10(NEFF) - 1, np.log10(NEFF) + 1, 20)
     values = sorted(list(values) + [NEFF])
     for val in values:
+        # update the parameters in the embedding table
         G._update_neffs(np.array([val, 2e5, 2e5]))
+        # calculate the MSC likelihood weighted and unweighted
         mloglik1 = get_msc_loglik_from_embedding(G.emb, tree_spans)
         mloglik2 = get_msc_loglik_from_embedding(G.emb)
+        # calculate the SMC likelihood for tree and topo distances
         gloglik = get_ms_smc_loglik_from_embedding(G, RECOMB, tree_spans, event_type=1)
         tloglik = get_ms_smc_loglik_from_embedding(G, RECOMB, topo_spans, event_type=2, idxs=topo_idxs)
         # wloglik = get_mssmc_loglik_from_embedding(G, RECOMB, glens, event_type=2)
+
+        # report likelihoods
         xloglik = gloglik + tloglik
         loglik1 = mloglik1 + gloglik + tloglik
         loglik2 = mloglik2 + gloglik + tloglik
