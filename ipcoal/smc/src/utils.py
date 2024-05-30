@@ -2,10 +2,24 @@
 
 """Utility functions for SMC subpackage.
 
+Methods
+-------
+# Get one simple example dataset of S,G,I for testing MSC
+- get_test_data()
 
->>> get_trees_and_spans_from_model(...)
->>> get_topos_and_spans_from_model(...)
+# get interval lengths and trees from Model simulations
+- iter_spans_and_trees_from_model(...)
+- iter_spans_and_topos_from_model(...)
 
+# get interval lengths and trees from a list of ToyTrees
+- iter_spans_and_trees_from_model(...)
+- iter_spans_and_topos_from_model(...)
+
+# get topos
+- iter_topos_from_trees
+
+# parse ARGweaver results...
+- ...
 
 """
 
@@ -173,7 +187,7 @@ def get_waiting_distance_data_from_model(model: ipcoal.Model):
     return np.array(tree_spans), np.array(topo_spans), np.array(topo_idxs), trees
 
 
-# NOT YET IPMLEMENTED: NEED TO CONCAT
+# NOT YET IPMLEMENTED: NEED TO CONCAT and validate against single-core
 def new_get_waiting_distance_data_from_model(model: ipcoal.Model, nproc: int = None):
     """Return tree-dists, topo-dists, topo-change-indices, trees
     """
@@ -182,15 +196,16 @@ def new_get_waiting_distance_data_from_model(model: ipcoal.Model, nproc: int = N
         # treat each locus at a time to skip last tree
         # in a locus that is cut-off at its ending.
         for lidx, ldf in model.df.groupby("locus"):
-            rasyncs[lidx] = pool.submit(subfunc, ldf)
+            rasyncs[lidx] = pool.submit(_remote_subfunc, ldf)
     gspans, tspans, tidxs, trees = zip(*[rasyncs[i].result() for i in rasyncs])
     gspans = np.concatenate(gspans, axis=0)
     tspans = np.concatenate(tspans, axis=0)
     return gspans, tspans, tidxs, trees
 
 
-def subfunc(data):
-    """Remote function called by get_waiting...
+def _remote_subfunc(data):
+    """Remote function called by get_waiting_distance_data_from_model when
+    run in parallel.
     """
     trees = []
     tree_spans = []
