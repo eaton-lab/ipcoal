@@ -169,7 +169,9 @@ def get_prob_topo_unchanged_given_b_from_arrays(
     # get sum pb2 from m to end of b
     pb2 = _get_pb2_set_sum(gemb, bidxs, midxs, fidxs)
     # logger.info(f"branch {branch}, sum-pb2={pb2:.3f}")
-    return (1 / (t_ub - t_lb)) * (pb1 + pb2)
+
+    brlen = max(1e-9, (t_ub - t_lb))
+    return (1 / brlen) * (pb1 + pb2)
 
 
 @njit(parallel=True)
@@ -319,7 +321,9 @@ def get_fast_prob_topo_unchanged_given_b(
     # get sum pb2 from m to end of b
     pb2 = _get_fast_sum_pb2(btab, ftab, mtab)
     # logger.info(f"branch {branch}, sum-pb2={pb2:.3f}")
-    return (1 / (t_ub - t_lb)) * (pb1 + pb2)
+
+    brlen = max(1e-9, (t_ub - t_lb))
+    return (1 / brlen) * (pb1 + pb2)
 
 
 @njit
