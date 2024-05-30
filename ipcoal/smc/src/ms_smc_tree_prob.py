@@ -71,7 +71,9 @@ def get_prob_tree_unchanged_given_b_and_tr_from_arrays(
     term1 = (1 / gemb[tidx, 4])
 
     # pij * inner for all intervals on branch above or including tr
-    term2 = sum([_get_fij_set_sum(gemb, bidxs, [i]) * inner for i in bidxs])
+    term2 = 0
+    for i in bidxs:
+        term2 += _get_fij_set_sum(gemb, bidxs, [i]) * inner
     return term1 + term2
 
 
