@@ -285,8 +285,8 @@ def abba_baba(model, testtuples):
 
     """
     # check that data was simulated
-    if not model.seqs:
-        raise ipcoalError(
+    if model.seqs is None:
+        raise ValueError(
             "you must first simulate data with .sim_snps() or .sim_loci()")
 
     # ensure testtuples is a list of tuples
@@ -298,9 +298,7 @@ def abba_baba(model, testtuples):
     for tup in testtuples:
         for name in tup:
             if name not in tips:
-                raise ipcoalError(
-                    "name {} is not in the tree {}"
-                    .format(name, tips))
+                raise ValueError(f"name {name} is not in the tree {tips}")
 
     # get counts matrix
     counts = get_snps_count_matrix(model.tree, model.seqs)
@@ -347,7 +345,7 @@ def abba_baba(model, testtuples):
         "p2": p2,
         "p3": p3,
         "p4": p4,
-        },
+    },
         columns=["ABBA", "BABA", "D", "p1", "p2", "p3", "p4"],
     )
     return data
