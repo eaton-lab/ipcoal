@@ -355,23 +355,31 @@ class Model:
         """
         # user entered an Ne arg to init, override any Ne data on tree.
         if self.neff is not None:
-            self.tree = self.tree.set_node_data("Ne", default=self.neff)
+            if isinstance(self.neff, dict):
+                assert len(self.neff) == self.tree.nnodes, (
+                    "Ne argument dict input must include a key for every population.")
+                self.tree = self.tree.set_node_data("Ne", self.neff)
+            elif isinstance(self.neff, (int, float)):
+                self.tree = self.tree.set_node_data("Ne", default=self.neff)
+            else:
+                raise ValueError(
+                    "Ne argument type not recognized: "
+                    f"value={self.neff} type={type(self.neff)}")
 
-        # Ne values exist on tree, ensure present for all Nodes.
-        else:
-            if "Ne" not in self.tree.features:
-                raise IpcoalError(
-                    "You must either enter an Ne argument or set Ne values "
-                    "to all nodes of the input tree using ToyTree, e.g., "
-                    "tree.set_node_data('Ne', mapping=..., default=...). "
-                )
-            neffs = self.tree.get_node_data("Ne", missing=np.nan)
-            if neffs.isna().any():
-                raise IpcoalError(
-                    "You must either enter an Ne argument or set Ne values "
-                    "to all nodes of the input tree using ToyTree, e.g., "
-                    "tree.set_node_data('Ne', mapping=..., default=...).\n"
-                    f"Your tree has NaN for Ne at some nodes:\n{neffs}")
+        # Ne values must exist on tree, ensure present for all Nodes.
+        if "Ne" not in self.tree.features:
+            raise IpcoalError(
+                "You must either enter an Ne argument or set Ne values "
+                "to all nodes of the input tree using ToyTree, e.g., "
+                "tree.set_node_data('Ne', data=..., default=...). "
+            )
+        neffs = self.tree.get_node_data("Ne", missing=np.nan)
+        if neffs.isna().any():
+            raise IpcoalError(
+                "You must either enter an Ne argument or set Ne values "
+                "to all nodes of the input tree using ToyTree, e.g., "
+                "tree.set_node_data('Ne', data=..., default=...).\n"
+                f"Your tree has NaN for Ne at some nodes:\n{neffs}")
 
     def _set_tip_names(self):
         """Fill .tipdict to map 0-indexed ints to ordered samples.
@@ -570,10 +578,13 @@ class Model:
             # add migration interval events (start, end)
             if event['type'] == 'migration':
                 # set migration rate start event
+                src, dest = event['source'], event['dest']
+                node_src = self.tree[src]
+                node_dest = self.tree[dest]
                 demography.add_migration_rate_change(
                     time=event['time'],
-                    source=event['source'],
-                    dest=event['dest'],
+                    source=node_src.current,
+                    dest=node_dest.current,
                     rate=event['rate'],
                 )
 
@@ -684,6 +695,33 @@ class Model:
         canvas, axes, mark = mtre.draw(ts='c', tip_labels=True, **kwargs)
         return canvas, axes, mark
 
+    def draw_cloud_tree(self, idxs: Optional[List[int]] = None, **kwargs):
+        """Return a cloud tree drawing of multiple simulated genealogies.
+
+        This function accepts kwargs for any argument accepted by the
+        toytree.MultiTree.draw_cloud_tree function.
+
+        Parameters
+        ----------
+        idx: list of ints, or None
+            The index of the genealogies to draw from the (Model.df)
+            dataframe.
+        """
+        if idxs is None:
+            idxs = self.df.index
+        if isinstance(idxs, int):
+            idxs = [idxs]
+        mtree = toytree.mtree([self.df.genealogy[i] for i in idxs])
+
+        if "layout" not in kwargs:
+            kwargs["layout"] = "d"
+        if "html" not in kwargs:
+            kwargs["html"] = True
+        if "fixed_order" not in kwargs:
+            kwargs["fixed_order"] = self.tree.get_tip_labels()
+        canvas, axes, mark = mtree.draw_cloud_tree(**kwargs)
+        return canvas, axes, mark
+
     def draw_sptree(self, **kwargs):
         """Returns a toytree drawing of the species tree.
 
@@ -752,6 +790,7 @@ class Model:
         # return only the container
         if idx is None:
 
+            # single-population (rectangle) container
             if self.tree.ntips == 1:
                 gtree = toytree.rtree.coaltree(5)
                 emb = EmbeddingPlot(
@@ -761,6 +800,7 @@ class Model:
                     min_width=container_interval_minwidth,
                     max_width=container_interval_maxwidth,
                 )
+            # species tree container
             else:
                 imap = self.get_imap_dict()
                 if self.df is None:
