@@ -13,7 +13,7 @@ logger = logger.bind(name="ipcoal")
 
 
 def draw_seqview(
-    self,
+    self,  # Model class
     idx,
     start,
     end,
@@ -23,7 +23,8 @@ def draw_seqview(
     scrollable,
     max_width,
     gaps=1.5,
-    **kwargs):
+    **kwargs,
+):
     """Draws a sequence array as a colored toyplot table.
 
     """
@@ -65,7 +66,7 @@ def draw_seqview(
     table = canvas.table(
         rows=arr.shape[0],
         columns=arr.shape[1] + 1,
-        bounds=(50, -50, 50, -50), #"10%", "90%"),
+        bounds=(50, -50, 50, -50),  # "10%", "90%"),
         **kwargs,
     )
 
@@ -98,3 +99,7 @@ def draw_seqview(
     # table.cells.cell[:, 0].lstyle = {"text-anchor": "end", "font-size": "11px"}
     table.cells.cell[:, 0].width = 50
     return canvas, table
+
+
+if __name__ == "__main__":
+    pass
