@@ -169,6 +169,11 @@ if __name__ == "__main__":
     import toytree
     from ipcoal.msc import get_test_data
     SPTREE, GTREE, IMAP = get_test_data()
+
+    # plot genealogy embedded in species tree
+    # ...
+
+    # ...
     c0 = plot_edge_probabilities(SPTREE, GTREE, IMAP, branch=2)
     c1 = plot_waiting_distance_distributions(SPTREE, GTREE, IMAP, recombination_rate=2e-9)
     toytree.utils.show([c0, c1])
