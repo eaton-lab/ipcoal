@@ -52,8 +52,8 @@ def get_prob_tree_unchanged_given_b_and_tr_from_arrays(
     # subselect array intervals for this genealogy branch
     bmask = genc[:, bidx]
 
-    # subselect array intervals by time of recombination
-    in_or_above_t = (time < gemb[:, 1]) & (time >= gemb[:, 0])  # tr occurs before interval end
+    # subselect array intervals that end farther back in time than tr
+    in_or_above_t = (time < gemb[:, 1]) # & (time >= gemb[:, 0])  # tr occurs before interval end
 
     # get intervals on b above or include time tr
     bidxs = (bmask & in_or_above_t).nonzero()[0]
@@ -65,14 +65,13 @@ def get_prob_tree_unchanged_given_b_and_tr_from_arrays(
 
     # (nedges / 2neff) * time
     inner = (gemb[tidx, 4] / (2 * gemb[tidx, 3])) * time
-    # print(gemb[tidx, 4], gemb[tidx, 3], time, inner)
     inner = np.exp(inner)  # if inner < 100 else 1e15
 
     # (1 / nedges)
     term1 = (1 / gemb[tidx, 4])
 
     # pij * inner for all intervals on branch above or including tr
-    term2 = _get_fij_set_sum(gemb, bidxs, bidxs) * inner
+    term2 = sum([_get_fij_set_sum(gemb, bidxs, [i]) * inner for i in bidxs])
     return term1 + term2
 
 
