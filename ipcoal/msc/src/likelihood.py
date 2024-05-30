@@ -32,8 +32,19 @@ def get_msc_loglik(
     species_tree: toytree.ToyTree,
     gene_trees: Sequence[toytree.ToyTree],
     imap: Dict,
+    dists: Optional[np.ndarray] = None,
 ) -> float:
     """Return sum -loglik of genealogies embedded in a species tree.
+
+    This function returns the likelihood of observing a set of
+    coalescence times in the set of gene trees given a parameterized
+    species tree. This can be used to evaluate different species tree
+    model parameters to find the optimum model to explain the observed
+    data. A smaller returned value indicates the model is a better fit
+    to the data. Note: If you are evaluating a dataset at many parameter
+    settings it is faster to use the `get_msc_loglik_from_embedding`
+    function which does not need to recompile the embedding table each
+    time.
 
     Parameters
     ----------
@@ -47,6 +58,24 @@ def get_msc_loglik(
     imap: Dict
         A dict mapping species tree tip Node names to lists of gene
         tree tip Node names.
+    dists: np.ndarray or None
+        An int or float array with the length of chromosome that each
+        gene tree represents to use as a weight. This option is for
+        advanced users and not typically used in MSC analyses, but is
+        relevant to SMC-based calculations. When set to None all trees
+        are multipled by a weight of 1/ntrees. When an array of dists
+        is entered each is multipled by its length divided by the
+        sum length of dists.
+
+    See Also
+    --------
+    get_msc_loglik_from_embedding
+
+    Example
+    -------
+    >>> S, G, I = ipcoal.msc.get_test_data()
+    >>> loglik = ipcoal.msc.get_msc_loglik(S, G, I)
+    >>> print(loglik)  # 80.83643587318105
     """
     if isinstance(gene_trees, (toytree.ToyTree, str)):
         gene_trees = [gene_trees]
@@ -54,7 +83,7 @@ def get_msc_loglik(
         gene_trees = toytree.mtree(gene_trees).treelist
 
     emb, _ = get_genealogy_embedding_arrays(species_tree, gene_trees, imap)
-    loglik = get_msc_loglik_from_embedding(emb)
+    loglik = get_msc_loglik_from_embedding(emb, dists)
     return loglik
 
 
@@ -64,6 +93,13 @@ def get_msc_loglik_from_embedding(
     dists: Optional[np.ndarray] = None,
 ) -> float:
     """Return sum -loglik of genealogies embedded in a species tree.
+
+    This function returns the likelihood of observing a set of
+    coalescence times in the set of gene trees given a parameterized
+    species tree. This can be used to evaluate different species tree
+    model parameters to find the optimum model to explain the observed
+    data. A smaller returned value indicates the model is a better fit
+    to the data.
 
     Parameters
     ----------
@@ -210,7 +246,7 @@ if __name__ == "__main__":
 
     import ipcoal
     ipcoal.set_log_level("INFO")
-    # test_kingman(neff=1e6, nsamples=10, ntrees=500)
+    test_kingman(neff=1e6, nsamples=10, ntrees=500)
     test_msc(neff=1e6, nsamples=5, nloci=5000, nsites=1)
     test_msc(neff=1e6, nsamples=5, nloci=5, nsites=1e3)
     # test_msc(neff=1e6, nsamples=5, nloci=10, nsites=1e5)
