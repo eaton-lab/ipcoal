@@ -4,8 +4,9 @@
 
 TODO: we could alternatively simplify this by just extracting the
 tree, and also extracting the substitution data from the ts, and
-then drawing the substitutions as annotation marks on the tree. 
-This would be more atomic in terms of toytree development.
+then drawing the substitutions as annotation marks on the tree.
+This would be more atomic in terms of toytree development. It's just
+more storing of data that is otherwise in ts generators.
 """
 
 from typing import TypeVar, Optional
@@ -33,13 +34,17 @@ def draw_genealogy(
     if show_substitutions:
         # get which locus contains df index idx
         lidx = model.df.loc[idx, "locus"]
+
+        # plot without substitutions and report warning
         if lidx not in model.ts_dict:
             tree = toytree.tree(model.df.genealogy[idx])
             canvas, axes, mark = tree.draw(ts='c', tip_labels=True, **kwargs)
             logger.warning(
-                "Can only show substitutions if ipcoal.Model object was "
-                "initialized with the setting 'store_tree_sequences=True"
+                "Can only show substitutions if ipcoal.Model object has setting "
+                "'store_tree_sequences=True' during or after init."
             )
+
+        # create ToyTreeSequence and draw a tree from it.
         else:
             # load ts as a ToyTreeSequence object
             tseq = toytree.utils.toytree_sequence(
