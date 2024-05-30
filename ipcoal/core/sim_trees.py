@@ -31,6 +31,7 @@ def sim_trees(
     nproc=1. Only used and useful for very large simulations.
     """
     # clear any existing stored tree sequences
+    nloci = int(nloci)
     model.ts_dict = {}
     model.seqs = np.array([])
 
