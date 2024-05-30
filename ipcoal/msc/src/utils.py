@@ -18,11 +18,9 @@ __all__ = ['get_embedded_genealogy', 'get_test_data', 'get_test_model']
 def get_embedded_genealogy(tree: ToyTree, **kwargs) -> Tuple[ToyTree, Dict[str, Sequence[str]]]:
     """Return (genealogy, imap) for one simulated embedded genealogy.
 
-    Examples
-    ---------
     Arguments to ipcoal.Model can be modified using kwargs. This
     is a convenience function that performs the following steps:
-    >>> model = ipcoal.Model(species_tree, **kwargs)
+    >>> model = ipcoal.Model(tree, **kwargs)
     >>> model.sim_trees(1)
     >>> gtree = toytree.tree(model.df.genealogy[0])
     >>> imap = model.get_imap()
@@ -30,7 +28,7 @@ def get_embedded_genealogy(tree: ToyTree, **kwargs) -> Tuple[ToyTree, Dict[str, 
 
     Parameters
     ----------
-    tree:
+    tree: ToyTree
         A ToyTree object as a species tree. You can either set 'Ne'
         as a feature on Nodes or enter `Ne=...` as a kwarg.
     kwargs:
@@ -50,9 +48,14 @@ def get_embedded_genealogy(tree: ToyTree, **kwargs) -> Tuple[ToyTree, Dict[str, 
 
 
 def get_test_model(seed: Optional[int] = None):
-    """Return an ipcoal.Model for a simple test scenario."""
+    """Return an ipcoal.Model for a simple test scenario used in the
+    MS-SMC manuscript.
 
-    # Setup a species tree with edge lengths in generations
+    Four tip species tree (((A,B),C),D); with divtimes at 2e5, 4e5,
+    and 6e5, and a constant Ne of 1e5. The genealogy samples include
+    3 in A, 2 in B, and 1 from C and D.
+    """
+    # Set up a species tree with edge lengths in generations
     SPTREE = toytree.tree("(((A,B),C),D);")
     SPTREE.set_node_data("height", inplace=True, default=0, data={
         4: 200_000, 5: 400_000, 6: 600_000,
@@ -70,7 +73,8 @@ def get_test_model(seed: Optional[int] = None):
 
 
 def get_test_data(nloci: int = 0, nsites: int = 1, seed: Optional[int] = None):
-    """Returns sptree, gtree, IMAP for a simple test scenario.
+    """Returns (sptree, gtree, imap) for one or more genealogies
+    embedded in a species tree.
 
     Parameters
     ----------
@@ -84,6 +88,8 @@ def get_test_data(nloci: int = 0, nsites: int = 1, seed: Optional[int] = None):
         Random seed.
     """
     model = get_test_model(seed)
+
+    # do not simulate trees, manually create the one example tree.
     if not nloci:
         # Setup a genealogy embedded in the species tree (see below to
         # instead simulate one but here we just create it from newick.)
@@ -101,7 +107,7 @@ def get_test_data(nloci: int = 0, nsites: int = 1, seed: Optional[int] = None):
         }
         return model.tree, GTREE, IMAP
 
-    # OR, simulate trees
+    # simulate genealogies
     model.sim_trees(nloci, nsites)
     gtrees = toytree.mtree(model.df.genealogy).treelist
     return model.tree, gtrees, model.get_imap_dict()
