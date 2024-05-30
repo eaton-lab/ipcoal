@@ -4,6 +4,8 @@
 
 # ['start', 'stop', 'st_node', 'neff', 'nedges', 'dist', 'gidx', ...]
 
+Methods
+-------
 >>> get_genealogy_embedding_table(sptree, gtree, imap)
 """
 
@@ -13,9 +15,9 @@ import numpy as np
 import pandas as pd
 import toytree
 
+__all__ = ["get_genealogy_embedding_table", "get_genealogy_embedding_arrays"]
 logger = logger.bind(name="ipcoal")
 COLUMNS = ['start', 'stop', 'st_node', 'neff', 'nedges', 'dist', 'gidx']
-__all__ = ["get_genealogy_embedding_table", "get_genealogy_embedding_arrays"]
 
 
 def _get_fast_genealogy_embedding_table(
@@ -48,7 +50,7 @@ def _get_fast_genealogy_embedding_table(
         gt_nodes = set(name_to_node[i] for i in gt_tips)
 
         # get internal nodes in this TIME interval (coalescences)
-        lower = st_node.height + 0.0001  # zero-align ipcoal bug
+        lower = st_node._height + 0.0001  # zero-align ipcoal bug
         upper = np.inf if st_node.is_root() else st_node._up._height
         nodes_in_time_slice = (gt_node_heights > lower) & (gt_node_heights < upper)
 
@@ -86,7 +88,10 @@ def _get_fast_genealogy_embedding_table(
                 for child in gt_node._children:
                     edges.remove(child._idx)
             except KeyError as err:
-                raise ValueError("gene tree cannot be embedded in species tree.") from err
+                raise ValueError(
+                    "gene tree cannot be embedded in species tree. "
+                    f"Error embedding Node {gt_node._idx} in Species Tree interval {st_node._idx}."
+                ) from err
             for tip in gt_node.get_leaves():
                 name_to_node[tip.name] = gt_node
 
@@ -102,9 +107,10 @@ def _get_fast_genealogy_embedding_table(
         ])
         edge_encode.append(sorted(edges))
 
-    # to array and calculate dists from start and stop
+    # to array and calculate dists from start and stop, not allowing
+    # zero-length dist values
     arr = np.vstack(split_data)
-    arr[:, 5] = arr[:, 1] - arr[:, 0]
+    arr[:, 5] = (arr[:, 1] - arr[:, 0])
     return arr, edge_encode
     # create one-hot-encoded node IDs
     # encoding = np.zeros((len(edge_encode), nnodes), dtype=np.uint8)
