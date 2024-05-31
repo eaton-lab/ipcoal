@@ -35,8 +35,9 @@ def _get_fij_set_sum(emb: np.ndarray, idxs: np.ndarray, jdxs: np.ndarray) -> flo
     emb: ndarray
         A genealogy embedding table
     idxs: ndarray
-        Array of intervals as ordered ints for the path from the
-        recombination event interval to the parent of the branch.
+        Array of intervals as ordered ints for the path of either all
+        intervals on branch b, or the intervals above the time of
+        recombination on branch b.
     jdxs: ndarray
         Array of intervals as ordered ints on which re-coalescence is
         being calculated.
@@ -45,16 +46,22 @@ def _get_fij_set_sum(emb: np.ndarray, idxs: np.ndarray, jdxs: np.ndarray) -> flo
     idx = idxs[0]
     for jdx in jdxs:
 
+        # calculate f(i,i)
         if jdx == idx:
+            # -(1/k)
             term1 = -(1 / emb[idx, 4])
+            # exp(-k/2n * end)
             term2 = np.exp(-(emb[idx, 4] / (2 * emb[idx, 3])) * emb[idx, 1])
             fij = term1 * term2
 
         elif jdx < idx:
             fij = 0
 
+        # calculate f(i,j)
         else:
+            # (1/k)
             term1 = 1 / emb[jdx, 4]
+            # (1 - exp(-k/2n * dist))
             term2 = (1 - np.exp(-(emb[jdx, 4] / (2 * emb[jdx, 3])) * emb[jdx, 5]))
 
             # involves connections to idx interval
