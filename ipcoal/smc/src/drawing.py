@@ -62,8 +62,13 @@ def plot_edge_probabilities(
 
     # Get genealogy embedding table
     etable = get_genealogy_embedding_table(species_tree, genealogy, imap, encode=True)
-    btable = etable.loc[etable[bidx].astype(np.bool_)]
 
+    # Get intervals containing branch bidx
+    mask = etable.loc[:, bidx].astype(np.bool_)
+    btable = etable.loc[mask]
+    # print(btable)
+
+    # Get full embedding data
     emb, enc, barr, sarr, rarr = TreeEmbedding(
         species_tree, genealogy, imap, nproc=1).get_data()
 
@@ -174,6 +179,7 @@ if __name__ == "__main__":
     # ...
 
     # ...
-    c0 = plot_edge_probabilities(SPTREE, GTREE, IMAP, branch=2)
-    c1 = plot_waiting_distance_distributions(SPTREE, GTREE, IMAP, recombination_rate=2e-9)
-    toytree.utils.show([c0, c1])
+    c0 = plot_edge_probabilities(SPTREE, GTREE, IMAP, branch=5)
+    toytree.utils.show([c0])
+    # c1 = plot_waiting_distance_distributions(SPTREE, GTREE, IMAP, recombination_rate=2e-9)
+    # toytree.utils.show([c0, c1])
