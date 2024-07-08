@@ -70,7 +70,7 @@ SBATCH = """\
 #SBATCH --output={outpath}.out
 #SBATCH --error={outpath}.err
 #SBATCH --time=11:59:00
-#SBATCH --ntasks={ncores}
+#SBATCH --ntasks={ntasks}
 #SBATCH --cpus-per-task={nthreads}
 #SBATCH --mem=12G
 
@@ -82,6 +82,7 @@ SBATCH = """\
   --recomb {recomb} \
   --nsites {nsites} \
   --nloci {nloci} \
+  --phased {phased} \
   --rep {rep} \
   --seed {seed} \
   --outdir {outdir} \
@@ -99,15 +100,16 @@ class SlurmDistribute:
     neff: List[int]
     ctime: List[int]
     recomb: List[float]
+    mut: List[float]
     nsites: List[int]
     nloci: List[int]
 
     # individual params
-    mut: float
     nreps: int
     seed: int
     ncores: int
     nthreads: int
+    phased: bool
     outdir: Path
     account: str
     node_heights: List[float]
@@ -134,15 +136,18 @@ class SlurmDistribute:
 
     def iter_jobs(self) -> Iterator[Tuple[str, List[Any]]]:
         """Yield Tuples iterating over parameters combinations."""
-        combs = product(self.nsites, self.ctime, self.recomb, self.neff)
-        for nsi, cti, rec, nef in combs:
+        combs = product(self.nsites, self.ctime, self.recomb, self.mut, self.neff)
+        for nsi, cti, rec, mut, nef in combs:
             # basename of the params used across a set of replicates.
             params_basename = (
-                f"neff{int(nef)}-ctime{cti}-"
-                f"recomb{str(rec).replace('-', '')}-"
-                f"nloci{max(self.nloci)}-nsites{nsi}"
+                f"neff{int(nef)}_"
+                f"ctime{cti}_"
+                f"recomb{str(rec)}_"
+                f"mut{str(mut)}_"
+                f"nloci{max(self.nloci)}_"
+                f"nsites{nsi}"
             )
-            yield params_basename, [nsi, cti, rec, nef]
+            yield params_basename, [nsi, cti, rec, mut, nef]
 
     def iter_params(self) -> Iterator[Dict[str, Any]]:
         """Yield Dicts with all params for each job replicate."""
@@ -150,13 +155,13 @@ class SlurmDistribute:
         seeds = np.random.default_rng(self.seed).integers(1e12, size=self.nreps)
 
         # iterate over jobs to be submitted
-        for params_basename, [nsi, cti, rec, nef] in self.iter_jobs():
+        for params_basename, [nsi, cti, rec, mut, nef] in self.iter_jobs():
 
             # run this set for nreplicate times.
             for rep in range(self.nreps):
 
                 # get name of this job
-                jobname = f"res-{params_basename}-rep{rep}"
+                jobname = f"res_{params_basename}_rep{rep}"
                 outpath = self.outdir / jobname # for .sh, .err, .out files
 
                 # submit job to run...
@@ -164,17 +169,19 @@ class SlurmDistribute:
                     account=self.account,
                     jobname=jobname,
                     outpath=outpath,
+                    ntasks=int(self.ncores * self.nthreads),
                     ncores=self.ncores,
                     nthreads=self.nthreads,
                     root=ROOT,
                     neff=nef,
                     ctime=cti,
-                    mut=self.mut,
+                    mut=mut,
                     recomb=rec,
                     nsites=nsi,
                     nloci=" ".join([str(i) for i in self.nloci]),
                     rep=rep,
                     seed=seeds[rep],
+                    phased=self.phased,                    
                     outdir=self.outdir,
                     node_heights=" ".join([str(i) for i in self.node_heights]),
                     raxml_bin=self.raxml_bin,
@@ -191,7 +198,7 @@ class SlurmDistribute:
     def submit_subprocess(self, name: str, script: str, cmd: str="sbatch") -> None:
         """Start sh script with bash or sbatch."""
         # b/c the params string name has a '.' in it for decimal ctime.
-        tmpfile = self.outdir / f"job-{name}.sh"
+        tmpfile = self.outdir / f"job_{name}.sh"
         with open(tmpfile, 'w', encoding='utf-8') as out:
             out.write(script)
 
@@ -209,8 +216,9 @@ class SlurmDistribute:
         rlen = len(self.recomb)
         clen = len(self.ctime)
         slen = len(self.nsites)
+        mlen = len(self.mut)
         ilen = self.nreps
-        njobs = nlen * rlen * clen * slen * ilen
+        njobs = nlen * rlen * clen * slen * ilen * mlen
         return njobs
 
     def run(self, cmd: str="sbatch", resume: bool=False, force: bool=False) -> None:
@@ -236,14 +244,14 @@ class SlurmDistribute:
 
         # force removes everything inside the outdir.
         if force:
-            for path in self.outdir.glob("*-neff*-ctime*-recomb*-nloci*"):
+            for path in self.outdir.glob("*_neff*_ctime*_recomb*_nloci*"):
                 if path.is_dir():
                     shutil.rmtree(path)
                 else:
                     path.unlink()
 
         # iterate over all jobs to submit
-        nfin = len(list(self.outdir.glob("*-neff*-ctime*-recomb*-nloci*.csv")))
+        nfin = len(list(self.outdir.glob("_neff*_ctime*_recomb*_nloci*.csv")))
         njobs = self._count_njobs()
 
         # if all jobs are finished then run concatenation and end.
@@ -267,11 +275,12 @@ class SlurmDistribute:
             logger.info(f"starting job {name}")
             self.submit_subprocess(name, script, cmd)
 
-            # .out file contains log, .err file is errors; remove if empty.
-            logfile = self.outdir / f"{name}.err"
-            if logfile.exists():
-                if not logfile.stat().st_size:
-                    logfile.unlink()
+            # if no exceptions were raised then rm .err and .out files
+            logfiles = [self.outdir / f"{name}.err", self.outdir / f"{name}.out"]
+            for logf in logfiles:
+                if logf.exists():
+                    # if not logfile.stat().st_size:
+                    logf.unlink()
 
             # use short delay between job submissions to be nice.
             time.sleep(self.delay)
@@ -302,7 +311,7 @@ def distributed_command_line_parser():
     >>>     --node-heights 0.01 0.05 0.06 1 \
     >>>     --outdir /scratch/recomb/ \
     >>>     --account eaton \
-    >>>     --step 1
+    >>>     --phased True
     """
     parser = argparse.ArgumentParser(
         description='Coalescent simulation and tree inference w/ recombination')
@@ -311,9 +320,9 @@ def distributed_command_line_parser():
     parser.add_argument(
         '--ctime', type=float, default=[0.1, 1.5], nargs="*", help='Root species tree height in coalescent units')
     parser.add_argument(
-        '--recomb', type=float, default=[0, 5e-9], nargs=2, help='Recombination rate.')
+        '--recomb', type=float, default=[0, 5e-9], nargs="*", help='Recombination rates.')
     parser.add_argument(
-        '--mut', type=float, default=5e-8, help='Mutation rate.')
+        '--mut', type=float, default=[5e-8], nargs="*", help='Mutation rates.')
     parser.add_argument(
         '--node-heights', type=float, default=[0.05, 0.055, 0.06, 1], nargs=4, help='Internal relative node heights')
     parser.add_argument(
@@ -339,6 +348,8 @@ def distributed_command_line_parser():
     parser.add_argument(
         '--seed', type=int, default=123, help='Random number generator seed.')
     parser.add_argument(
+        '--phased', type=bool, default=True, help='simulate 5 phased haplotypes (vs 5 unphased diplotypes from 10 simulated haplotypes).')
+    parser.add_argument(
         '--cmd', type=str, default="bash", help="Execute 'bash' for local or 'sbatch' for SLURM.")
     parser.add_argument(
         '--log-level', type=str, default="INFO", help="logging level: DEBUG, INFO, WARNING, ERROR.")
@@ -362,43 +373,7 @@ def main():
     tool = SlurmDistribute(**kwargs)
     tool.run(cmd=cmd, resume=resume, force=force)
 
-def interactive():
-    """Substitute this command for main() in __main__ when testing."""
-    ipcoal.set_log_level("INFO")
-    tool = SlurmDistribute(
-        neff=[10_000, 100_000],
-        ctime=[0.1, 1.5],
-        recomb=[0, 5e-8, 5e-9],
-        node_heights=[0.05, 0.055, 0.06, 1],
-        nsites=[1_000, 2_000],
-        nloci=[200, 300],
-        mut=5e-8,
-        nreps=3,
-        outdir=Path("/tmp/tester"),
-        account="free",
-        ncores=2,
-        nthreads=4,
-        seed=123,
-        delay=0.1,
-    )
-    tool.run(cmd="bash", resume=True)
-
-    # jobs = tool.iter_slurm_scripts()
-    # print(next(jobs))
-    # print(next(jobs))
-
-    # # for job in tool.iter_slurm_scripts():
-    # name, script = next(jobs)
-    # tool.submit_slurm_subprocess(name, script, 'bash')
-
-    # name, script = next(jobs)
-    # tool.submit_slurm_subprocess(name, script, 'bash')
-
-    # name, script = next(jobs)
-    # tool.submit_slurm_subprocess(name, script, 'bash')
-
-
 if __name__ == "__main__":
 
-    # interactive()
+    # shutil.rmtree("/tmp/test/")
     main()
