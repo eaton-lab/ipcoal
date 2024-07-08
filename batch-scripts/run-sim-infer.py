@@ -59,6 +59,8 @@ class FiveTipImbTreeAnalyzer:
     seed: int
     nsites: int
     nloci: List[int]
+    phased: bool
+    """: Simulate diploid genomes and write ambiguity H sites."""
     outdir: Path
     """: dir for all replicate jobs of this param setting."""
     ncores: int
@@ -68,6 +70,8 @@ class FiveTipImbTreeAnalyzer:
     chunksize: int=CHUNKSIZE
 
     # attrs to be filled
+    diploid: bool = None
+    """: The inverse of phased."""
     params: str = None
     """: basename for folder, does not include rep number."""
     outfile: Path = None
@@ -76,25 +80,35 @@ class FiveTipImbTreeAnalyzer:
     """: dir for tmp raxml files and slurm job files."""
     sptree: toytree.ToyTree = None
     """: species tree with edges in units of generations."""
+    mean_ge_per_loc: int = None
+    """: Mean simulated genealogies per locus."""
+    mean_snps_per_loc: int = None
+    """: Mean simulated SNPs per locus."""
     model: ipcoal.Model = None
+    """: ipcoal.Model object."""
     data: pd.DataFrame = None
+    """: Dataframe to store/write results as CSV"""
 
     def __post_init__(self):
+        self.diploid = not self.phased
         self.params = (
-            f"neff{int(self.neff)}-ctime{self.ctime}-"
-            f"recomb{str(self.recomb).replace('-', '')}-"
-            f"nloci{max(self.nloci)}-nsites{self.nsites}-"
+            f"neff{int(self.neff)}_"
+            f"ctime{self.ctime}_"
+            f"recomb{str(self.recomb)}_"
+            f"mut{str(self.mut)}_"
+            f"nloci{max(self.nloci)}_"
+            f"nsites{self.nsites}_"
             f"rep{self.rep}"
         )
 
         # create a subdir in the outdir for this param set, all reps.
         self.outdir.mkdir(exist_ok=True)
-        self.outfile = self.outdir / f"res-{self.params}.csv"
+        self.outfile = self.outdir / f"res_{self.params}.csv"
         # self.jobdir = self.outdir / f"res-{self.params}"
         # self.jobdir.mkdir(exist_ok=True)
 
         # create a tmpdir in the outdir for this param set, this rep.
-        self.tmpdir = self.outdir / f"tmp-{self.params}"
+        self.tmpdir = self.outdir / f"tmp_{self.params}"
         self.tmpdir.mkdir(exist_ok=True)
 
         # create a 5-tip imbalanced tree
@@ -119,7 +133,8 @@ class FiveTipImbTreeAnalyzer:
             seed_trees=self.seed,
             seed_mutations=self.seed,
             mut=self.mut,
-            recomb=self.recomb
+            recomb=self.recomb,
+            nsamples=(2 if self.diploid else 1)
         )
 
         theta = 2 * self.neff * self.mut
@@ -149,8 +164,14 @@ class FiveTipImbTreeAnalyzer:
     def _simulate_sequences(self) -> None:
         """Simulate the largest size dataset of NLOCI (in memory for now.)"""
         self.model.sim_loci(nloci=max(self.nloci), nsites=self.nsites)
-        ngen = self.model.df.groupby('locus').size().mean()
-        logger.info(f"simulated {max(self.nloci)} loci; len={self.nsites}; mean-ngenealogies-per-locus={ngen:.2f}.")
+        self.mean_ge_per_loc = self.model.df.groupby('locus').size().mean()
+        self.mean_snps_per_loc = self.model.df.groupby('locus').nsnps.sum().mean()
+        logger.info(
+            f"simulated {max(self.nloci)} loci; "
+            f"len={self.nsites}; "
+            f"mean-ngenealogies-per-locus={self.mean_ge_per_loc:.8g}; "
+            f"mean-snps-per-locus={self.mean_snps_per_loc:.8g}."
+        )
 
     def _infer_raxml_gene_trees(self) -> None:
         """Infer gene tree for every locus and write to a CSV in jobdir."""
@@ -176,6 +197,7 @@ class FiveTipImbTreeAnalyzer:
                 nworkers=1,
                 nthreads=self.nthreads,
                 seed=self.seed,
+                diploid=self.diploid,
                 binary_path=self.raxml_bin,
                 tmpdir=self.tmpdir,
                 cleanup=True,
@@ -197,6 +219,7 @@ class FiveTipImbTreeAnalyzer:
                 nworkers=1,
                 nthreads=self.nthreads, #self.ncores, # limit to 1 so we can use ntasks=12
                 seed=self.seed,
+                diploid=self.diploid,
                 binary_path=self.raxml_bin,
                 tmpdir=self.tmpdir,
             )
@@ -214,17 +237,22 @@ class FiveTipImbTreeAnalyzer:
 
             # infer astral species tree from true genealogies (the first)
             # genealogy at each locus, since subsequent trees are linked.
+            # if diploid=True then there will be 2 samples per tip which
+            # are ascribed to the same species using the imap.
             genealogies = self.model.df.loc[self.model.df.tidx == 0].genealogy
             atree1 = ipcoal.phylo.infer_astral_tree(
                 toytree.mtree(genealogies[:numloci]),
                 binary_path=self.astral_bin,
                 seed=self.seed,
                 tmpdir=self.tmpdir,
+                imap=self.model.get_imap_dict(diploid=False),
             )
             # atree1.write(self.jobdir / f"rep{self.rep}-astral-genealogy-subloci{numloci}.nwk")
             self.data.loc[self.data.nloci == numloci, "astral_ge"] = atree1.write()
 
             # infer astral species tree from inferred gene trees.
+            # if diploid=True then gene trees already contain diploid names
+            # so we don't need to do anything.
             genetrees = toytree.mtree(raxdf.gene_tree)[:numloci]
             atree2 = ipcoal.phylo.infer_astral_tree(
                 genetrees,
@@ -243,19 +271,27 @@ class FiveTipImbTreeAnalyzer:
 
     def _setup_dataframe(self):
         """..."""
-        cols = ["neff", "ctime", "nloci", "nsites", "rep", "concat", "astral_ge", "astral_gt"]
+        cols = [
+            "neff", "ctime", "nloci", "nsites", "recomb", "mut", 
+            "rep", "mean_ge_per_loc", "mean_snps_per_loc",
+            "concat", "astral_ge", "astral_gt"
+        ]
         data = pd.DataFrame(columns=cols, index=range(len(self.nloci)))
         data.neff = self.neff
         data.ctime = self.ctime
         data.nloci = self.nloci
         data.nsites = self.nsites
+        data.recomb = self.recomb
+        data.mut = self.mut
         data.rep = self.rep
+        data.mean_ge_per_loc = self.mean_ge_per_loc
+        data.mean_snps_per_loc = self.mean_snps_per_loc
         self.data = data
 
     def run(self) -> None:
-        """..."""
-        self._setup_dataframe()
+        """Full workflow. Simulate ge, infer gts, infer concat & astral."""
         self._simulate_sequences()
+        self._setup_dataframe()        
         self._infer_raxml_gene_trees()
         self._infer_concatenated_trees()
         self._infer_astral_trees()
@@ -265,7 +301,7 @@ class FiveTipImbTreeAnalyzer:
             tmpf.unlink()
         self.tmpdir.rmdir()
         self.data.to_csv(self.outfile)
-        logger.info(f"writing CSV to {self.outfile}.")
+        logger.info(f"writing CSV to {self.outfile}")
 
 
 def single_command_line_parser() -> Dict[str, Any]:
@@ -300,6 +336,8 @@ def single_command_line_parser() -> Dict[str, Any]:
         '--raxml-bin', type=Path, help='path to raxml-ng binary')
     parser.add_argument(
         '--astral-bin', type=Path, help='path to astral-III binary')
+    parser.add_argument(
+        '--phased', type=bool, default=True, help='simulate 5 phased haplotypes (vs 5 unphased diplotypes from 10 simulated haplotypes).')        
     return vars(parser.parse_args())
 
 
@@ -320,6 +358,7 @@ def interactive_test() -> None:
         ctime=1.0,
         recomb=5e-9,
         mut=5e-8,
+        phased=True,
         rep=1,
         seed=123,
         nsites=2000,
