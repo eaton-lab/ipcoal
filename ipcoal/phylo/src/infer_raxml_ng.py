@@ -376,30 +376,34 @@ def infer_raxml_ng_trees(
         idxs = list(idxs)
 
     # TODO: asynchrony so that writing and processing are not limited.
-    with ProcessPoolExecutor(max_workers=nproc) as pool:
-        for lidx in idxs:
-            if lidx not in pidxs:
-                continue
-            # if no data then return a star tree.
-            # locus = model.df[model.df.locus == lidx]
-            # if not locus.nsnps.sum():
-            #     names = list(chain(*model.get_imap_dict(diploid=diploid).values()))
-            #     rasyncs[lidx] = pool.submit(get_star_tree, names)
-            #     empty += 1
-            # else:
-                # disk-crushing mode.
-                # fname = _write_tmp_phylip_file(model, int(lidx), diploid, tmpdir)
-                # kwargs['alignment'] = fname
-                # kwargs['seed'] = rng.integers(1e12)
-                # rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
-                # rasyncs[lidx] = rasync
+    try:
+        with ProcessPoolExecutor(max_workers=nproc) as pool:
+            for lidx in idxs:
+                if lidx not in pidxs:
+                    continue
+                # if no data then return a star tree.
+                # locus = model.df[model.df.locus == lidx]
+                # if not locus.nsnps.sum():
+                #     names = list(chain(*model.get_imap_dict(diploid=diploid).values()))
+                #     rasyncs[lidx] = pool.submit(get_star_tree, names)
+                #     empty += 1
+                # else:
+                    # disk-crushing mode.
+                    # fname = _write_tmp_phylip_file(model, int(lidx), diploid, tmpdir)
+                    # kwargs['alignment'] = fname
+                    # kwargs['seed'] = rng.integers(1e12)
+                    # rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
+                    # rasyncs[lidx] = rasync
 
-            # disk-friendly mode, but higher memory-usage.
-            ali = model.write_concat_to_phylip(idxs=int(lidx), diploid=diploid, quiet=True)
-            kwargs['alignment'] = ali
-            kwargs['seed'] = rng.integers(1e12)
-            rasync = pool.submit(infer_raxml_ng_tree_from_alignment, **kwargs)
-            rasyncs[lidx] = rasync
+                # disk-friendly mode, but higher memory-usage.
+                ali = model.write_concat_to_phylip(idxs=int(lidx), diploid=diploid, quiet=True)
+                kwargs['alignment'] = ali
+                kwargs['seed'] = rng.integers(1e12)
+                rasync = pool.submit(infer_raxml_ng_tree_from_alignment, **kwargs)
+                rasyncs[lidx] = rasync
+    except KeyboardInterrupt as _:
+        pool.shutdown()
+        # raise kbd
 
     # check for failures
     for job, rasync in rasyncs.items():
@@ -435,6 +439,7 @@ def get_star_tree(names: Sequence[str]) -> toytree.ToyTree:
         treenode._add_child(toytree.Node(name=tip, dist=0))
     tree = toytree.ToyTree(treenode)
     return tree
+    # return toytree.rtree.startree(len(names), names=names, seed=None)
 
 
 if __name__ == "__main__":
