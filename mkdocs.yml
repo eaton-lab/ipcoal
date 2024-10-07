@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
 
-# conda install mkdocs-material mkdocs-jupyter mkdocstrings mkdocstrings-python -c conda-forge
+# conda install mkdocs-material mkdocs-jupyter -c conda-forge
 site_name: ipcoal documentation
 repo_url: https://github.com/eaton-lab/ipcoal
 edit_uri: edit/master/docs/
@@ -30,7 +30,7 @@ plugins:
   #           docstring_style: numpy
   #           annotations_path: brief            
   - mkdocs-jupyter:
-      kernel_name: py310
+      kernel_name: ipcoal
       ignore_h1_titles: true
       include_requirejs: true
       # highlight_extra_classes: "custom-css-classes"  # don't use this!
@@ -54,8 +54,8 @@ markdown_extensions:
   - pymdownx.superfences
 
 nav:
-  - Home: index.md    
   - Getting started:
+    - Home: index.md
     - Installation: installation.md
     # - Change log: change_log.md
     - Contribute: contribute.md
@@ -76,13 +76,13 @@ nav:
     # - Substitution Models: substitution.ipynb
     # - Recomb and Mut Maps: recomb_mut_maps.ipynb
     - Phylogenetic inference:
-      - Gene tree inference: infer_gene_trees.ipynb
-      - Species tree inference: infer_species_trees.ipynb
-      - Species network inference: infer_species_network.ipynb
+      - Gene tree inference: gene-tree-inference.ipynb
+      - Species tree inference: species-tree-inference.ipynb
+      # - Species network inference: species-network-inference.ipynb
     - Visualizations: visualization.ipynb
-    - Likelihoods: 
-      - MSC likelihood: MSC_likelihood.ipynb
-      - SMC likelihood: SMC_likelihood.ipynb
+    # - Likelihoods: 
+    - MSC likelihood: MSC_likelihood.ipynb
+    - SMC likelihood: SMC_likelihood.ipynb
     # - Writing data: writing.ipynb
   
   - FAQs: FAQs.md
@@ -97,6 +97,7 @@ nav:
     # - Single population coalescent: example-Kingman.ipynb
     # - Multispecies coalescent: example-MSC.ipynb
 
+  # Format for souce code building such as w/ mkdocstrings.
   # - Source:
   #   - Data structures: 
   #     - class - ToyTree: source/toytree.md
