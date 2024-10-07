@@ -43,10 +43,12 @@ def sim_trees(
                 "the recomb_map also specifies nsites. To use a recomb_map"
                 "specify nsites=None.")
         nsites = model.recomb.sequence_length
-    if model.store_tree_sequences and (nproc > 1):
-        nproc = 1
-        logger.warning(
-            "Cannot use nproc>1 with store_tree_sequences=True. Using nproc=1.")
+
+    # requires pickling TreeSeqs
+    # if model.store_tree_sequences and (nproc > 1):
+    #     nproc = 1
+    #     logger.warning(
+    #         "Cannot use nproc>1 with store_tree_sequences=True. Using nproc=1.")
 
     # run single core simulation. Stores results to Model and returns None
     if nproc == 1:
@@ -62,6 +64,7 @@ def sim_trees(
     model.rng_trees = None
     model.rng_muts = None     # doesn't matter in sim_trees
     model.subst_model = None  # doesn't matter in sim_trees
+    model.ts_dict = {}        # empty it
 
     # send simulate jobs in chunks
     chunksize = int(nloci / nproc) + (nloci % nproc)
@@ -89,6 +92,9 @@ def sim_trees(
         data, ts_dict = future.result()
         data.locus += low
         datalist.append(data)
+        # advance key counters
+        ts_dict = {i + low: j for (i, j ) in ts_dict.items()}
+        model.ts_dict.update(ts_dict)
     model.df = pd.concat(datalist, axis=0)
     model.df = model.df.reset_index(drop=True)
 
@@ -214,7 +220,14 @@ if __name__ == "__main__":
     import toytree
     import ipcoal
 
+    # TREE = toytree.rtree.unittree(ntips=6, treeheight=1e6)
+    # MODEL = ipcoal.Model(TREE, Ne=1e4, seed_trees=123)
+    # MODEL.sim_trees(40, 1e4, nproc=1)
+    # print(MODEL.df)
+
     TREE = toytree.rtree.unittree(ntips=6, treeheight=1e6)
-    MODEL = ipcoal.Model(TREE, Ne=1e4, seed_trees=123)
-    MODEL.sim_trees(40, 1e4, nproc=1)
+    MODEL = ipcoal.Model(TREE, Ne=1e4, seed_trees=123, store_tree_sequences=True)
+    MODEL.sim_trees(10, 1e4, nproc=4)
+    # print(_sim_trees(MODEL, 10, 10, 14))
     print(MODEL.df)
+    print(MODEL.ts_dict)
