@@ -865,9 +865,41 @@ class Model:
             )
         return emb.canvas, emb.axes
 
-    def draw_tree_sequence(self, **kwargs):
-        """Return a toytree TreeSequence drawing."""
-        raise NotImplementedError("TODO..")
+    def draw_tree_sequence(
+        self,
+        idx: int = 0,
+        start: int = 0,
+        max_trees: int = 10,
+        height: int = None,
+        width: int = None,
+        scrollable: bool = False,
+        **kwargs,
+    ):
+        """Return a toytree TreeSequence drawing.
+
+        This uses the method `toytree.utils.toytree_sequence(ts)` to
+        create a ToyTreeSequence object and then calls
+
+        Parameters
+        ----------
+        start: int:
+            The first tree in the treesequence to show (default=0)
+        max_trees: int
+            Limit to the number of trees shown (default=10).
+        height: int:
+            Canvas height in px units (default=None=auto).
+        width: int:
+            Canvas width in px units (default=None=auto).
+        scrollable: bool:
+            If True the canvas will be returned as scrollable in a
+            jupyter notebook (works in notebook, not sure about lab).
+            default=True.
+        """
+        if not self.ts_dict:
+            raise IpcoalError("To call this method you must initialize the Model object with 'store_tree_sequences=True'")
+        tts = toytree.utils.toytree_sequence(self.ts_dict[idx], name_dict=self.tipdict)
+        return tts.draw_tree_sequence(start, max_trees, height, width, scrollable, **kwargs)
+
 
     # ----------------------------------------------------------------
     # MSPRIME simulation methods
@@ -940,7 +972,7 @@ class Model:
             samples=self.samples,
             demography=self.ms_demography,
             sequence_length=(None if self._recomb_is_map else nsites),
-            recombination_rate=(None if snp or self._recomb_is_map else self.recomb),
+            recombination_rate=None if snp else self.recomb,
             num_replicates=(int(1e20) if snp else 1),
             random_seed=seed,
             discrete_genome=self.discrete_genome,
