@@ -5,28 +5,30 @@
 
 version: 2
 
-# Define the default Python version to use
-python:
-  version: 3.9
-
-# Define the dependencies required for building the docs
-dependencies:
-  - requirements.txt  # Reference to your requirements file
-  - sphinx>=4.0
-  - sphinx_rtd_theme
-  - nbsphinx
-  - ipykernel
-
 # Define the build system
 build:
-  os: ubuntu-20.04
-  image: latest
+  os: ubuntu-22.04
   tools:
-    python: "3.9"
+    python: "3.12"
 
 # Optionally, you can define the path to the source code for the docs
 sphinx:
   configuration: old-docs/conf.py
+
+# Define the dependencies required for building the docs
+python:
+  install:
+    - method: pip
+      path: .
+      extra_requirements: 
+        - sphinx>=4.0
+        - sphinx_rtd_theme
+        - nbsphinx
+        - ipykernel
+        # old-docs/sphinx-requirements.txt
+
+#   system_packages: true
+# dependencies:
 
 
 # OLD # CURRENTLY NOT USED (NOT ON GITHUB)
