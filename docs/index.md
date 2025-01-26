@@ -31,5 +31,4 @@ in an interactive and visual environment.
 - Transparent: Read our code and make it your own.
 
 ## Contact us
-- Questions? Email us: p.mckenzie@columbia.edu
-- Feature request? Raise a ticket on [GitHub](https://github.com/eaton-lab/ipcoal).
+- Questions or Feature requests? Raise a ticket at the [GitHub repo](https://github.com/eaton-lab/ipcoal).

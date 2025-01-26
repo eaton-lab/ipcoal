@@ -89,11 +89,12 @@ nav:
 
   # Use this for the gallery: https://smarie.github.io/mkdocs-gallery/
   - Cookbooks/Examples:
-    - 1. Species tree inference: example-Astral.ipynb
-    - 2. Network inference: example-SNaQ.ipynb
-    - 3. Linked genealogies: example-Twist.ipynb
-    - 4. Generation time variation (theory): cookbooks/cookbook-gentime-theory.ipynb    
-    - 5. Generation time variation (empirical): cookbooks/cookbook-gentime-empirical.ipynb
+    - 1. Generation time variation: cookbooks/cookbook-gentime-empirical.ipynb
+    # - 1. Species tree inference: example-Astral.ipynb
+    # - 2. Network inference: example-SNaQ.ipynb
+    # - 3. Linked genealogies: example-Twist.ipynb
+    # - 4. Generation time variation (theory): cookbooks/cookbook-gentime-theory.ipynb    
+
     # - Single population coalescent: example-Kingman.ipynb
     # - Multispecies coalescent: example-MSC.ipynb
 
