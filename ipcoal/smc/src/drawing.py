@@ -180,6 +180,6 @@ if __name__ == "__main__":
 
     # ...
     c0 = plot_edge_probabilities(SPTREE, GTREE, IMAP, branch=5)
-    toytree.utils.show([c0])
+    toytree.utils.show([c0], tmpdir="~")
     # c1 = plot_waiting_distance_distributions(SPTREE, GTREE, IMAP, recombination_rate=2e-9)
     # toytree.utils.show([c0, c1])
