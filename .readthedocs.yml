@@ -3,24 +3,50 @@
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 
 
-# CURRENTLY NOT USED (NOT ON GITHUB)
-
-# Required
 version: 2
 
+# Define the default Python version to use
 python:
   version: 3.9
-  install: 
-    - requirements: old-docs/sphinx-requirements.txt
-    - method: pip
-      path: .
-  system_packages: true
 
-# conda:
-  # environment: docs/environment.yml
+# Define the dependencies required for building the docs
+dependencies:
+  - requirements.txt  # Reference to your requirements file
+  - sphinx>=4.0
+  - sphinx_rtd_theme
+  - nbsphinx
+  - ipykernel
 
+# Define the build system
 build:
+  os: ubuntu-20.04
   image: latest
+  tools:
+    python: "3.9"
 
+# Optionally, you can define the path to the source code for the docs
 sphinx:
   configuration: old-docs/conf.py
+
+
+# OLD # CURRENTLY NOT USED (NOT ON GITHUB)
+
+# # Required
+# version: 2
+
+# python:
+#   version: 3.9
+#   install: 
+#     - requirements: old-docs/sphinx-requirements.txt
+#     - method: pip
+#       path: .
+#   system_packages: true
+
+# # conda:
+#   # environment: docs/environment.yml
+
+# build:
+#   image: latest
+
+# sphinx:
+#   configuration: old-docs/conf.py
