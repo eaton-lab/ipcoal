@@ -20,7 +20,8 @@ python:
   install:
     - method: pip
       path: .
-      extra_requirements: old-docs/sphinx-requirements.txt
+      extra_requirements: 
+        - old-docs/sphinx-requirements.txt
 
 #   system_packages: true
 # dependencies:
