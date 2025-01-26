@@ -20,12 +20,7 @@ python:
   install:
     - method: pip
       path: .
-      extra_requirements: 
-        - sphinx>=4.0
-        - sphinx_rtd_theme
-        - nbsphinx
-        - ipykernel
-        # old-docs/sphinx-requirements.txt
+      extra_requirements: old-docs/sphinx-requirements.txt
 
 #   system_packages: true
 # dependencies:
