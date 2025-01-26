@@ -18,10 +18,10 @@ sphinx:
 # Define the dependencies required for building the docs
 python:
   install:
+    - requirements: old-docs/sphinx-requirements.txt
     - method: pip
       path: .
-      extra_requirements: 
-        - old-docs/sphinx-requirements.txt
+  system_packages: true
 
 #   system_packages: true
 # dependencies:
